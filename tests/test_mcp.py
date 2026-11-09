@@ -14,7 +14,8 @@ def test_stdio_tools():
                 names = {t.name for t in result.tools}
                 assert {'analyze','compare','analyze_stems','recommend','propose','apply','history','restore','propose_reference','clap_compare','backup_project','finish_render_job'} <= names
                 assert not {'approve','decide','send_cc'} & names
-                assert len(names)==28
+                assert len(names)==29
+                assert 'add_midi_expression' in names
                 assert {'remote_status','remote_tracks','remote_inspect','remote_plugins','remote_propose','remote_propose_plugin'} <= names
                 # A rejected live request must never reach MIDI hardware.
                 response = await session.call_tool('apply', {'proposal_id':'missing','dry_run':False})

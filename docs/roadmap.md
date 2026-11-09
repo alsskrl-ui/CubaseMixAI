@@ -1,5 +1,11 @@
 # 구현 상태
 
+# 0.4 Expressive MIDI files
+
+- Source MIDI를 보존하는 새 파일 생성
+- Bounded pitch bend, modulation CC1, channel aftertouch with explicit instrument pitch-bend range
+- Import into Cubase and audition manually; no project insertion or live MIDI event sending
+
 ## 0.3 Cubase 15 확장
 
 MIDI Remote DirectAccess 양방향 드라이버, 실제 대상/값 조회, 물리값 변환 feature detection, 호스트 compare-and-set, fresh readback, session invalidation, 빈 슬롯 plugin catalog/삽입을 추가했습니다. 기존 CC 제안과 같은 로컬 UI 승인·이력·단일 적용 경로를 사용합니다. [사용법](cubase15.md) · [공식 API/공개 저장소 조사](cubase15-api-research.md). 실제 Cubase 15 동작은 아직 실기기 검증이 필요합니다.

@@ -10,12 +10,13 @@ from .mastering import master_chain
 from .render import create_render_job, finish_render_job
 from .workflow import Workflow
 from .remote.tools import remote_status, remote_tracks, remote_inspect, remote_plugins, remote_propose, remote_propose_plugin
+from .midi_expression import add_midi_expression
 
 server = FastMCP('CubaseMixAI')
 for function in (analyze,compare,analyze_stems,recommend,integrate,propose_reference,evaluate_render,
                  compare_sections,export_ab,export_report,clap_compare,backup_project,verify_backup,
                  restore_project,calibration_report,master_chain,create_render_job,finish_render_job,
-                 remote_status,remote_tracks,remote_inspect,remote_plugins,remote_propose,remote_propose_plugin):
+                 remote_status,remote_tracks,remote_inspect,remote_plugins,remote_propose,remote_propose_plugin,add_midi_expression):
     server.tool()(function)
 
 @server.tool()

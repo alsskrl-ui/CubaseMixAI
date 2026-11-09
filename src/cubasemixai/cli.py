@@ -34,6 +34,11 @@ def main():
     p = sub.add_parser('render-finish'); p.add_argument('id'); p.add_argument('--model-dir')
     p = sub.add_parser('report'); p.add_argument('input_json'); p.add_argument('output_html')
     r = sub.add_parser('remote-setup'); r.add_argument('scripts_dir')
+    e = sub.add_parser('midi-expression', help='Create a new MIDI copy with bounded pitch bend/CC1/aftertouch')
+    e.add_argument('input_midi'); e.add_argument('output_midi'); e.add_argument('--channel',type=int,default=0)
+    e.add_argument('--pitch-wander-cents',type=float,default=6.0); e.add_argument('--pitch-bend-range-semitones',type=float,default=2.0)
+    e.add_argument('--modulation-depth',type=int,default=0); e.add_argument('--aftertouch-depth',type=int,default=0)
+    e.add_argument('--rate-hz',type=float,default=8.0); e.add_argument('--seed',type=int,default=1)
     sub.add_parser('remote-status'); sub.add_parser('remote-tracks')
     r = sub.add_parser('remote-inspect'); r.add_argument('target_json'); r.add_argument('--object-id',type=int); r.add_argument('--offset',type=int,default=0)
     r = sub.add_parser('remote-request'); r.add_argument('request_json',help='JSON containing target/object_id/parameter_tag/after/reason; creates a pending proposal only')
@@ -51,6 +56,11 @@ def main():
             elif args.cmd=='remote-tracks': result=remote_tracks()
             elif args.cmd=='remote-inspect': result=remote_inspect(read(args.target_json),args.object_id,args.offset)
             else: result=remote_propose(**read(args.request_json))
+        elif args.cmd == 'midi-expression':
+            from .midi_expression import add_midi_expression
+            result=add_midi_expression(args.input_midi,args.output_midi,channel=args.channel,
+                pitch_wander_cents=args.pitch_wander_cents,pitch_bend_range_semitones=args.pitch_bend_range_semitones,
+                modulation_depth=args.modulation_depth,aftertouch_depth=args.aftertouch_depth,rate_hz=args.rate_hz,seed=args.seed)
         elif args.cmd == 'doctor':
             from .doctor import doctor
             result=doctor(args.mapping)

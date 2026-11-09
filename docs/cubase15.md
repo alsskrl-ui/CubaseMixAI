@@ -1,6 +1,6 @@
 # Cubase 15: MIDI Remote DirectAccess 사용 가이드
 
-CubaseMixAI 0.3은 기존 CC 외에 **MIDI Remote DirectAccess** 경로를 제공합니다. 지원되는 트랙/플러그인 파라미터는 수동 CC 매핑 없이 실제 호스트 값을 읽고, 대상을 식별해 승인 후 변경합니다. [API 조사 근거](cubase15-api-research.md)
+CubaseMixAI 0.4에서는 기존 CC 외에 **MIDI Remote DirectAccess**와 별도 MIDI 표현 파일 생성을 제공합니다. 지원되는 트랙/플러그인 파라미터는 수동 CC 매핑 없이 실제 호스트 값을 읽고, 대상을 식별해 승인 후 변경합니다. [API 조사 근거](cubase15-api-research.md)
 
 실제 Cubase 15에서의 드라이버 로드·대상/값·플러그인 지원은 아직 사용자 환경에서 검증해야 합니다. 처음에는 작업 복사본에서 킥 볼륨 하나로 확인하세요. 기존 DSP/CLAP·백업·MCP 등록은 README 절차를 그대로 사용합니다.
 
@@ -104,7 +104,7 @@ Cubase의 detection 이름은 위 기본 loopMIDI 이름이고, JSON은 Python�
 
 ## 4. Codex MCP 등록과 첫 조회
 
-기존 `cubasemixai` MCP 등록을 그대로 사용할 수 있습니다. Python 패키지를 업데이트하고 Codex를 재시작하면 새 도구가 포함된 **28개**가 조회되어야 합니다. 기본 등록:
+기존 `cubasemixai` MCP 등록을 그대로 사용할 수 있습니다. Python 패키지를 업데이트하고 Codex를 재시작하면 **29개 도구**가 조회되어야 합니다. 기본 등록:
 
 ```powershell
 codex mcp add cubasemixai --env 'CUBASEMIXAI_STATE_DIR=C:\CubaseMixAI\.cubasemixai' --env 'OMP_NUM_THREADS=2' -- 'C:\CubaseMixAI\.venv\Scripts\cubasemixai-mcp.exe'
@@ -192,7 +192,7 @@ remote_propose_plugin을 호출해 pending 제안만 만들어줘.
 ## 8. 실제 검증 목록과 한계
 
 - [ ] Cubase 15의 정확한 build·edition과 API capabilities 기록
-- [ ] driver 로드, 양방향 두 포트 handshake, 28개 MCP 도구 조회
+- [ ] driver 로드, 양방향 두 포트 handshake, 29개 MCP 도구 조회
 - [ ] Kick/Vocal을 따로 만들고 Vocal이 선택된 상태에서 Kick Volume만 바뀌는지 확인
 - [ ] 킥 트랙 재정렬 후 동일 identity를 따라가는지 확인
 - [ ] 대상 삭제·plugin 교체·프로젝트 전환·값 수동 변경 시 기존 제안을 거부하는지 확인
@@ -203,3 +203,30 @@ remote_propose_plugin을 호출해 pending 제안만 만들어줘.
 - [ ] 새 WAV를 내보내 DSP/CLAP·레벨 매칭 청취로 개선 여부 확인
 
 WAV export와 전체 프로젝트 저장·GUI 대화상자는 이번 backend에서 자동 실행하지 않습니다. readback은 노출된 host 상태를 확인하는 것이며 최종 믹스 청취를 대체하지 않습니다. 이 드라이버의 테스트는 Node API-shaped fake host이며 Cubase runtime을 재현했다고 주장하지 않습니다.
+
+<a id="midi-expression"></a>
+## MIDI 클립에 피치벤드·모듈레이션·애프터터치 추가
+
+이 기능은 Cubase Remote API를 통해 즉시 연주 이벤트를 보내는 기능이 아닙니다. 악기 트랙에서 내보낸 단일 MIDI 클립을 입력해, 표현 이벤트가 추가된 **새 `.mid` 파일**을 만들고 Cubase에서 직접 가져옵니다. WAV는 이미 렌더된 오디오라 pitch bend나 aftertouch를 넣을 수 없습니다. 원본을 덮어쓰지 않으며 이미 pitch bend/CC1/channel aftertouch가 있는 대상 채널은 중복 적용을 막기 위해 거부합니다.
+
+Codex MCP 예시:
+
+```text
+source.mid를 expressive.mid로 복사하면서 피치가 천천히 불안하게 움직이도록 해줘.
+피치 흔들림은 최대 6 cents, pitch bend range는 악기 설정과 같은 2 semitones로 해.
+원본은 보존하고 결과 파일 경로와 사용한 범위를 알려줘. 모듈레이션과 aftertouch는 추가하지 마.
+```
+
+기본값으로 실행하는 같은 CLI 명령:
+
+```powershell
+cubasemixai midi-expression source.mid expressive.mid --pitch-wander-cents 6 --pitch-bend-range-semitones 2
+```
+
+변조와 채널 애프터터치를 더하려면 깊이를 0–127 범위로 지정합니다. 예를 들어:
+
+```powershell
+cubasemixai midi-expression source.mid expressive.mid --pitch-wander-cents 6 --pitch-bend-range-semitones 2 --modulation-depth 24 --aftertouch-depth 16 --rate-hz 8
+```
+
+작업 순서는 **악기 파트 MIDI 내보내기 → 새 파일 생성 → Cubase에 가져오기 → 같은 악기/채널로 라우팅 → 기존 파트와 비교 청취**입니다. 먼저 복사본 프로젝트에서 확인하세요. 6 cents는 기본으로 생성되는 최대 피치 변화량이며, pitch-bend range 값은 악기에서 실제 설정한 semitone 범위와 일치해야 합니다. 잘못 설정하면 흔들림 크기가 예상과 달라집니다. 모듈레이션(CC1)과 channel aftertouch는 신스와 프리셋이 지원해야 소리가 달라집니다. pitch bend와 channel aftertouch는 같은 MIDI 채널에서 동시에 울리는 음에 모두 작용합니다. 기존 파트에 덮어쓰거나 MIDI를 Cubase 프로젝트에 자동 배치하지 않습니다.

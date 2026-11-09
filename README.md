@@ -1,4 +1,4 @@
-# CubaseMixAI 0.3 사용 매뉴얼
+# CubaseMixAI 0.4 사용 매뉴얼
 
 Cubase 15의 MIDI Remote DirectAccess 또는 Cubase 10.5의 기존 CC 경로로, 레퍼런스를 분석하고 직접 승인한 변경만 적용하는 로컬 프로그램입니다. 이 문서는 **Cubase가 설치된 Windows PC + PowerShell + Codex CLI**를 기준으로 작성했습니다.
 
@@ -22,8 +22,11 @@ Cubase 15의 MIDI Remote DirectAccess 또는 Cubase 10.5의 기존 CC 경로로,
 | 믹스 조정 | 노출된 파라미터에 변경안을 만들고, 로컬 UI에서 승인한 뒤 적용·재조회 | “Kick이 너무 튀어. 현재 Volume보다 1 dB 낮춘 안을 만들어줘. 아직 적용하지 마.” |
 | 플러그인 확인·삽입 | API가 지원하면 설치 목록을 보고 **빈 Insert 슬롯**에 선택한 플러그인을 승인 후 삽입 | “빈 슬롯과 설치 플러그인을 보여줘. 아직 삽입하지 마.” |
 | WAV 분석·비교 | 내보낸 믹스/스템의 음량·주파수·다이내믹·스테레오 및 선택적 CLAP 비교 | “믹스와 킥 스템을 분석하고 차이를 설명해줘.” |
+| MIDI 표현 추가 | MIDI 클립의 새 복사본에 제한된 피치벤드·모듈레이션(CC1)·채널 애프터터치 생성 | “이 MIDI를 복사해서 피치가 최대 6센트 정도 천천히 흔들리는 버전을 만들어줘.” |
 
-조정은 **조회 → 제안 → 로컬 UI에서 직접 승인 → 적용 → Cubase 값 재확인 → 새 WAV를 내보내 청취** 순서입니다. Codex만으로 승인할 수 없습니다. 파라미터 노출과 플러그인 삽입은 Cubase 빌드/API 기능에 따라 다릅니다. 자동 WAV 렌더, 기존 플러그인 교체·삭제, 최종 음질 판정은 지원하지 않습니다. 내보내기와 최종 청취는 Cubase에서 직접 합니다. 이 기능은 Cubase 15 실기기에서 아직 확인되지 않았습니다.
+믹서 조정은 **조회 → 제안 → 로컬 UI에서 직접 승인 → 적용 → Cubase 값 재확인 → 새 WAV를 내보내 청취** 순서입니다. MIDI 표현 도구는 악기 파트의 MIDI 파일이 있어야 하며, WAV 스템에는 연주 이벤트가 남아 있지 않아 적용할 수 없습니다. 원본 클립을 바꾸지 않고 새 `.mid`를 만들며, Cubase로 가져와 악기 트랙에 연결해 직접 들어본 뒤 사용하세요. 피치벤드와 채널 애프터터치는 같은 MIDI 채널의 동시 발음 음 모두에 영향을 줍니다. 파라미터 노출과 플러그인 삽입은 Cubase 빌드/API 기능에 따라 다릅니다. 자동 WAV 렌더, 기존 플러그인 교체·삭제, 최종 음질 판정은 지원하지 않습니다. Cubase 15 DirectAccess 실기기 연결은 아직 확인되지 않았습니다.
+
+CLI 예: `cubasemixai midi-expression source.mid expressive.mid --pitch-wander-cents 6 --pitch-bend-range-semitones 2`. [MIDI 표현 사용법](docs/cubase15.md#midi-expression)에서 CC1·애프터터치 예시와 import 절차를 확인하세요.
 
 자세한 연결 절차는 [Cubase 15 빠른 시작과 제한사항](docs/cubase15.md)을, 나머지 설치·분석·Cubase 10.5 CC 사용법은 아래 매뉴얼을 참고하세요.
 
@@ -54,7 +57,7 @@ Cubase 15의 MIDI Remote DirectAccess 또는 Cubase 10.5의 기존 CC 경로로,
 | loopMIDI | 같은 Windows PC | Python에서 Cubase로 MIDI CC를 전달하는 가상 포트 |
 | CubaseMixAI CLI | PowerShell | WAV 분석, 변경안, 백업, 재렌더 비교 등의 명령 실행 |
 | 로컬 승인 UI | 같은 PC의 웹 브라우저 | 결과 확인, 변경안 직접 승인·거절, 실제 전송, 복원 제안 |
-| CubaseMixAI MCP 서버 | Codex가 실행하는 로컬 프로세스 | Codex가 프로그램의 28개 도구를 호출하도록 연결 |
+| CubaseMixAI MCP 서버 | Codex가 실행하는 로컬 프로세스 | Codex가 프로그램의 29개 도구를 호출하도록 연결 |
 | Codex CLI | 같은 Windows PC | 자연어 요청을 도구 호출로 바꾸고 결과·근거·다음 작업 설명 |
 | CLAP | 선택 설치, 같은 PC | 음원 임베딩과 음색·펀치·공간 프롬프트 친화도 비교 |
 
@@ -1016,12 +1019,13 @@ AI 의존성도 갱신할 때는 마지막 명령에 `-e '.[ai]'`를 사용합�
 
 WAV 분석과 CLAP 추론은 로컬에서 수행하며 이 MCP 구현이 WAV 파일 자체를 외부로 업로드하지는 않습니다. Codex로 도구를 호출하면 반환되는 분석 수치·경로·요약은 Codex 대화의 문맥으로 전달될 수 있습니다. 로컬 토큰은 같은 사용자 권한의 악의적 프로그램에 대한 보안 경계가 아닙니다.
 
-### MCP 도구 28개
+### MCP 도구 29개
 
 | 작업 | 도구 |
 |---|---|
 | Cubase 15 조회 | `remote_status`, `remote_tracks`, `remote_inspect`, `remote_plugins` |
 | Cubase 15 제안 | `remote_propose`, `remote_propose_plugin` |
+| MIDI 표현 파일 생성 | `add_midi_expression` |
 | WAV/DSP | `analyze`, `compare`, `analyze_stems`, `compare_sections` |
 | 판단·AI | `recommend`, `integrate`, `clap_compare`, `propose_reference` |
 | 변경안·이력 | `propose`, `apply`, `history`, `restore` |
