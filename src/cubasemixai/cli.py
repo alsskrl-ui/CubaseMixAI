@@ -33,12 +33,25 @@ def main():
     p = sub.add_parser('render-start'); p.add_argument('before'); p.add_argument('reference'); p.add_argument('output')
     p = sub.add_parser('render-finish'); p.add_argument('id'); p.add_argument('--model-dir')
     p = sub.add_parser('report'); p.add_argument('input_json'); p.add_argument('output_html')
+    r = sub.add_parser('remote-setup'); r.add_argument('scripts_dir')
+    sub.add_parser('remote-status'); sub.add_parser('remote-tracks')
+    r = sub.add_parser('remote-inspect'); r.add_argument('target_json'); r.add_argument('--object-id',type=int); r.add_argument('--offset',type=int,default=0)
+    r = sub.add_parser('remote-request'); r.add_argument('request_json',help='JSON containing target/object_id/parameter_tag/after/reason; creates a pending proposal only')
     args = parser.parse_args()
     if args.state_dir:
         os.environ['CUBASEMIXAI_STATE_DIR'] = str(Path(args.state_dir).resolve())
     def read(path): return json.loads(Path(path).read_text(encoding='utf-8'))
     try:
-        if args.cmd == 'doctor':
+        if args.cmd == 'remote-setup':
+            from .remote.setup import setup_remote
+            result=setup_remote(args.scripts_dir)
+        elif args.cmd in {'remote-status','remote-tracks','remote-inspect','remote-request'}:
+            from .remote.tools import remote_status,remote_tracks,remote_inspect,remote_propose
+            if args.cmd=='remote-status': result=remote_status()
+            elif args.cmd=='remote-tracks': result=remote_tracks()
+            elif args.cmd=='remote-inspect': result=remote_inspect(read(args.target_json),args.object_id,args.offset)
+            else: result=remote_propose(**read(args.request_json))
+        elif args.cmd == 'doctor':
             from .doctor import doctor
             result=doctor(args.mapping)
         elif args.cmd == 'analyze': result = analyze(args.wav,args.start,args.end)

@@ -1,10 +1,10 @@
-# 0.2.0 검증 기록
+# 0.3.0 검증 기록
 
 2026-11-09, Linux / Python 3.12.14. 정확한 의존성 버전은 [environment-tested.json](environment-tested.json)에 기록했습니다. 일반 설치는 pyproject.toml을 사용합니다.
 
 ## 자동 테스트
 
-`python -m pytest -q` → **24 passed**. FastAPI/Starlette TestClient의 httpx 사용 중단 예정 경고 1건이 있으며 테스트는 통과했습니다.
+`python -m pytest -q` → **33 passed**. FastAPI/Starlette TestClient의 httpx 사용 중단 예정 경고 1건이 있으며 테스트는 통과했습니다.
 
 - 합성 사인파 RMS, 6.02dB gain/LUFS 관계, 무음·역상·구간 유효성
 - 레퍼런스 기반 수치 후보의 범위·변화량, pending 상태, 근거 WAV 변경 감지
@@ -15,12 +15,27 @@
 - 로컬 UI token/Host/Origin/직접 확인, 만료·거절·중복·동시 적용 차단
 - 부분 전송 예외, 재시도 차단, 적용 전 스냅샷과 복원 제안
 - 시뮬레이션 매핑의 승인 후 live 전송 차단
-- MCP stdio 초기화·22개 도구 조회, 승인/raw MIDI 도구 부재, 잘못된 적용 오류
+- MCP stdio 초기화·28개 도구 조회, 승인/raw MIDI 도구 부재, 잘못된 적용 오류
 - 분석 → 제안 → 승인 → mock MIDI → 새 렌더 가져오기 → 평가 → A/B 출력 → 복원 제안 통합
 
 MIDI 전송은 mock sender로 검증했으며 실제 Cubase 동작은 검증하지 않았습니다. 샌드박스에서 로컬 비동기 HTTP가 대기하여 루프백 통신 가능한 실행 환경에서 테스트를 수행했습니다.
 
+## Cubase 15 DirectAccess 검증 추가
+
+- 실제 배포할 ES5 driver를 Node VM의 API-shaped fake host에서 실행
+- 트랙 고유 identity·scope·재정렬, 객체 교체, 현재 값 drift, edit lock, epoch 변경, request replay 거부
+- API 1.3 physical conversion, API 1.2에서 1.3 기능 거부
+- 설치된 catalog UID, 빈 슬롯만 할당, 삽입 child identity 확인
+- Python client의 실제 SysEx chunk encoder/decoder와 실제 JS driver를 바이트 단위로 연결: handshake → 트랙 조회 → -1dB pending → 로컬 승인 → 쓰기 → fresh readback → 복원 → 빈 슬롯 삽입
+- UI에서 생성한 remote 제안이 같은 SQLite 이력에 들어가고, 미승인 적용이 차단되며 승인 후 verified/복원이 동작하는지 확인
+- 프로세스 간 포트 쌍 lock, Unicode/7-bit framing/chunk 충돌, setup 파일 덮어쓰기 거부
+
+**Cubase 15 실기기 실행은 수행하지 않았습니다.** fake host는 실제 Cubase 런타임, plugin 구현, Windows MIDI 전달·host callback timing을 입증하지 않습니다. [실기기 목록](cubase15.md#8-실제-검증-목록과-한계)을 반드시 별도로 확인해야 합니다.
+
 ## 실제 CLAP 설치 및 추론
+
+아래는 기존 0.2 분석 엔진에서 실행한 기록입니다. 0.3 제어 backend 추가가 실제 음원의 평가 정확도를 새로 입증하는 것은 아닙니다.
+
 
 공식 모델 `laion/clap-htsat-unfused`를 내려받아 CPU PyTorch와 transformers로 실행했습니다.
 

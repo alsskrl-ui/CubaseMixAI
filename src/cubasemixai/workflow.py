@@ -34,9 +34,13 @@ class Workflow:
                    "risk": "MIDI has no acknowledgement; current values are user-supplied. Back up Cubase before applying."}
         payload["evidence"] = evidence
         self._check_sources(payload)
+        return self.store(payload)
+
+    def store(self, payload: dict) -> dict:
+        encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False)
         ident = uuid.uuid4().hex
         with self.connect() as con:
-            con.execute("INSERT INTO proposals VALUES (?, ?, 'pending', ?, NULL)", (ident, time.time(), json.dumps(payload, allow_nan=False)))
+            con.execute("INSERT INTO proposals VALUES (?, ?, 'pending', ?, NULL)", (ident, time.time(), encoded))
         return self.get(ident)
 
     def _check_sources(self, payload):
@@ -58,6 +62,9 @@ class Workflow:
         return [self.get(i) for i in ids]
 
     def decide(self, ident: str, approve: bool) -> dict:
+        if self.get(ident)["payload"].get("backend") == "midi_remote":
+            from .remote.workflow import RemoteWorkflow
+            return RemoteWorkflow(self).decide(ident, approve)
         # Called only by the local review UI, never exposed as MCP tool.
         with self.connect() as con:
             con.execute("BEGIN IMMEDIATE")
@@ -78,6 +85,11 @@ class Workflow:
 
     def apply(self, ident: str, *, dry_run: bool = True, sender=None) -> dict:
         p = self.get(ident)
+        if p["payload"].get("backend") == "midi_remote":
+            if sender is not None:
+                raise ValueError("Legacy sender cannot bypass MIDI Remote host verification")
+            from .remote.workflow import RemoteWorkflow
+            return RemoteWorkflow(self).apply(ident, dry_run)
         self._check_sources(p["payload"])
         mapping, digest = load_mapping(p["payload"]["mapping_path"])
         if digest != p["payload"]["mapping_sha256"]:
@@ -107,6 +119,9 @@ class Workflow:
 
     def restore_proposal(self, ident: str) -> dict:
         p = self.get(ident)
+        if p["payload"].get("backend") == "midi_remote":
+            from .remote.workflow import RemoteWorkflow
+            return RemoteWorkflow(self).restore(ident)
         if p["status"] not in {"sent", "uncertain", "sending"}:
             raise ValueError("Only attempted live changes can be restored")
         changes = [{**c, "before": c["after"], "after": c["before"]} for c in p["payload"]["changes"]]

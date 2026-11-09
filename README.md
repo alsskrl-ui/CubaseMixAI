@@ -1,6 +1,6 @@
-# CubaseMixAI 사용 매뉴얼
+# CubaseMixAI 0.3 사용 매뉴얼
 
-Cubase 10.5에서 레퍼런스와 내 믹스를 비교하고, 변경 이유를 검토한 뒤 직접 승인한 변경만 MIDI로 적용하는 로컬 프로그램입니다. 이 문서는 **Cubase가 설치된 Windows PC + PowerShell + Codex CLI**를 기준으로 작성했습니다.
+Cubase 15의 MIDI Remote DirectAccess 또는 Cubase 10.5의 기존 CC 경로로, 레퍼런스를 분석하고 직접 승인한 변경만 적용하는 로컬 프로그램입니다. 이 문서는 **Cubase가 설치된 Windows PC + PowerShell + Codex CLI**를 기준으로 작성했습니다.
 
 기본 순서는 다음과 같습니다.
 
@@ -8,7 +8,15 @@ Cubase 10.5에서 레퍼런스와 내 믹스를 비교하고, 변경 이유를 �
 
 첫 사용은 MIDI 설정 없이 WAV 분석부터 시작할 수 있습니다. Cubase 페이더나 플러그인을 실제로 움직이려면 loopMIDI와 실측 매핑 설정을 마쳐야 합니다.
 
+## Cubase 15를 쓴다면 먼저
+
+**[Cubase 15 전용 연결·Codex 사용 가이드](docs/cubase15.md)** 를 따르세요. 0.3에서 양방향 DirectAccess 드라이버를 추가했습니다. 노출된 대상은 CC 수동 매핑 대신 실제 트랙/플러그인 identity와 현재 값을 읽어 제안하고, 적용 후 다시 읽어 확인합니다. API 1.3의 물리값 변환·설치 플러그인 catalog·빈 슬롯 삽입을 feature detection으로 지원합니다.
+
+[API·오픈소스 조사 근거](docs/cubase15-api-research.md)에는 공식 문서, 참고 저장소, MCU/VST3/OSC 등의 대안과 선택 이유를 정리했습니다. **새 backend는 자체 mock/프로토콜 테스트를 거쳤고 실제 Cubase 15 검증은 아직 필요합니다.** 이전 CC 가이드는 Cubase 10.5용 경로로 유지합니다.
+
 ## 목차
+
+- [Cubase 15: 실제 상태 조회와 승인 후 DirectAccess 제어](docs/cubase15.md)
 
 - [1. 프로그램과 Codex의 역할](#roles)
 - [2. Windows 설치와 프로젝트 준비](#install)
@@ -29,11 +37,11 @@ Cubase 10.5에서 레퍼런스와 내 믹스를 비교하고, 변경 이유를 �
 
 | 구성 요소 | 실행 위치 | 역할 |
 |---|---|---|
-| Cubase 10.5 | 사용자 Windows PC | 원본 프로젝트, 믹서, 플러그인, WAV 내보내기 |
+| Cubase 15 또는 10.5 | 사용자 Windows PC | 원본 프로젝트, 믹서, 플러그인, WAV 내보내기 |
 | loopMIDI | 같은 Windows PC | Python에서 Cubase로 MIDI CC를 전달하는 가상 포트 |
 | CubaseMixAI CLI | PowerShell | WAV 분석, 변경안, 백업, 재렌더 비교 등의 명령 실행 |
 | 로컬 승인 UI | 같은 PC의 웹 브라우저 | 결과 확인, 변경안 직접 승인·거절, 실제 전송, 복원 제안 |
-| CubaseMixAI MCP 서버 | Codex가 실행하는 로컬 프로세스 | Codex가 프로그램의 22개 도구를 호출하도록 연결 |
+| CubaseMixAI MCP 서버 | Codex가 실행하는 로컬 프로세스 | Codex가 프로그램의 28개 도구를 호출하도록 연결 |
 | Codex CLI | 같은 Windows PC | 자연어 요청을 도구 호출로 바꾸고 결과·근거·다음 작업 설명 |
 | CLAP | 선택 설치, 같은 PC | 음원 임베딩과 음색·펀치·공간 프롬프트 친화도 비교 |
 
@@ -41,7 +49,7 @@ Cubase 10.5에서 레퍼런스와 내 믹스를 비교하고, 변경 이유를 �
 
 이 매뉴얼은 Windows PowerShell에서 직접 실행하는 Codex CLI를 기준으로 합니다. WSL/Linux에서 실행하는 Codex는 파일 경로와 MIDI 백엔드가 다릅니다. 처음에는 Windows의 Python·Codex·loopMIDI를 같은 환경에서 실행하세요. 다른 Codex 클라이언트의 설정 메뉴는 버전에 따라 다를 수 있으며, 등록 후 실제 MCP 도구 호출로 연결을 확인해야 합니다.
 
-Cubase 내부의 전체 파라미터를 자동으로 읽지는 않습니다. 현재 값은 사용자가 Cubase 화면에서 확인해 입력합니다. 플러그인 삽입, EQ 주파수/Q·컴프레서 초기 설정, WAV 내보내기는 Cubase에서 직접 합니다.
+기존 CC 경로의 현재 값은 사용자가 화면에서 확인해 입력합니다. Cubase 15 DirectAccess 경로는 API가 노출한 실제 객체/파라미터를 조회하고, API 1.3 plugin manager가 있으면 빈 슬롯 삽입도 승인 후 수행합니다. 모든 plugin/내부 상태가 노출된다고 가정하지 않으며 WAV 내보내기와 최종 청취는 직접 합니다.
 
 <a id="install"></a>
 ## 2. Windows 설치와 프로젝트 준비
@@ -55,7 +63,7 @@ Cubase 내부의 전체 파라미터를 자동으로 읽지는 않습니다. 현
 | Node.js | LTS, npm 포함 | `node --version`, `npm --version` |
 | Codex CLI | 아래 npm 명령으로 설치 | `codex --version` |
 | loopMIDI | Tobias Erichsen 공식 배포판 | 앱에서 포트 생성 후 CLI로 확인 |
-| Cubase | 테스트에 사용할 10.5 프로젝트 | 작업 복사본이 정상적으로 열리는지 확인 |
+| Cubase | 15 DirectAccess 또는 기존 10.5 CC용 테스트 프로젝트 | 작업 복사본이 정상적으로 열리는지 확인 |
 
 다운로드: [Python](https://www.python.org/downloads/windows/) · [Git](https://git-scm.com/downloads/win) · [Node.js](https://nodejs.org/) · [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html)
 
@@ -182,7 +190,7 @@ Review token (do not share with an AI agent): ...
 UI에서 제공하는 작업은 분석·구간/스템 비교·AI 청취·변경안·백업·캘리브레이션 오차 확인·마스터 매핑 점검·재렌더 가져오기·A/B 출력입니다. UI의 일반 변경안 생성 폼은 DSP 기반입니다. CLAP 근거까지 통합한 제안은 [6장](#codex-usage)의 Codex 예시 또는 [8장](#clap)의 CLI 명령을 사용합니다.
 
 <a id="midi"></a>
-## 4. Cubase·loopMIDI 연결과 실측 매핑
+## 4. Cubase 10.5: loopMIDI·Generic Remote 연결과 실측 매핑
 
 이 장의 목표는 **① 킥 볼륨 하나를 먼저 움직여 보고 ② 킥 컴프레서/EQ까지 연결하는 것**입니다. WAV 분석만 할 때는 건너뛰어도 됩니다. 처음부터 모든 스템과 플러그인을 연결하지 말고 킥 한 트랙에서 확인한 뒤 늘려가세요.
 
@@ -703,7 +711,8 @@ Codex 복원 요청 예:
 | `approved` | 사용자 승인 완료. 유효 시간 안에 한 번 적용 가능 |
 | `rejected` | 거절됨. 적용 불가 |
 | `sending` | 전송 시도 시작 기록. 계속 남아 있으면 현재 값 확인 |
-| `sent` | Python 전송 완료. Cubase 화면·청취로 별도 확인 |
+| `sent` | 기존 CC 경로의 Python 전송 완료. Cubase 화면·청취로 별도 확인 |
+| `verified` | 새 DirectAccess 경로의 목표 파라미터/UID를 fresh read로 확인. 음질 개선 확인과는 별개 |
 | `uncertain` | 실패/부분 전송 가능성. 자동 재시도하지 않기 |
 
 ### 7-4. CLI만으로 제안·미리보기·적용
@@ -994,10 +1003,12 @@ AI 의존성도 갱신할 때는 마지막 명령에 `-e '.[ai]'`를 사용합�
 
 WAV 분석과 CLAP 추론은 로컬에서 수행하며 이 MCP 구현이 WAV 파일 자체를 외부로 업로드하지는 않습니다. Codex로 도구를 호출하면 반환되는 분석 수치·경로·요약은 Codex 대화의 문맥으로 전달될 수 있습니다. 로컬 토큰은 같은 사용자 권한의 악의적 프로그램에 대한 보안 경계가 아닙니다.
 
-### MCP 도구 22개
+### MCP 도구 28개
 
 | 작업 | 도구 |
 |---|---|
+| Cubase 15 조회 | `remote_status`, `remote_tracks`, `remote_inspect`, `remote_plugins` |
+| Cubase 15 제안 | `remote_propose`, `remote_propose_plugin` |
 | WAV/DSP | `analyze`, `compare`, `analyze_stems`, `compare_sections` |
 | 판단·AI | `recommend`, `integrate`, `clap_compare`, `propose_reference` |
 | 변경안·이력 | `propose`, `apply`, `history`, `restore` |
@@ -1009,7 +1020,7 @@ WAV 분석과 CLAP 추론은 로컬에서 수행하며 이 MCP 구현이 WAV 파
 
 ### 검증 범위와 개발 테스트
 
-자동 테스트 24개, 실제 CPU CLAP 추론, 브라우저 승인 흐름, Windows/Linux CI를 확인했습니다. 실제 사용자 음원의 청취 판단, Cubase Generic Remote/QC 실기기, 원본 프로젝트 복원과 최종 마스터링은 사용자 환경에서 확인해야 합니다.
+0.2의 자동 테스트·실제 CPU CLAP·브라우저·Windows/Linux CI를 확인했고, 0.3에서는 DirectAccess driver mock·양방향 프로토콜·실제 상태 기반 승인 테스트를 추가했습니다. 최신 결과는 검증 기록을 참고하세요. 실제 사용자 음원의 청취 판단, Cubase Generic Remote/QC 실기기, 원본 프로젝트 복원과 최종 마스터링은 사용자 환경에서 확인해야 합니다.
 
 [남은 설정·검증 체크리스트](docs/verification-checklist.md) · [단계별 구현 범위](docs/roadmap.md) · [검증 기록](docs/validation.md) · [검증 환경 버전](docs/environment-tested.json)
 

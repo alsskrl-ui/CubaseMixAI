@@ -1,5 +1,11 @@
 # 구현 상태
 
+## 0.3 Cubase 15 확장
+
+MIDI Remote DirectAccess 양방향 드라이버, 실제 대상/값 조회, 물리값 변환 feature detection, 호스트 compare-and-set, fresh readback, session invalidation, 빈 슬롯 plugin catalog/삽입을 추가했습니다. 기존 CC 제안과 같은 로컬 UI 승인·이력·단일 적용 경로를 사용합니다. [사용법](cubase15.md) · [공식 API/공개 저장소 조사](cubase15-api-research.md). 실제 Cubase 15 동작은 아직 실기기 검증이 필요합니다.
+
+## 0.2 기존 분석·CC 경로
+
 0.2.0은 모든 단계의 로컬 소프트웨어 경로를 제공합니다. Cubase 10.5에서 직접 수행해야 하는 설치·매핑·플러그인 삽입·WAV 내보내기와 실제 청취 검증은 [남은 설정·검증 목록](verification-checklist.md)에 모았습니다.
 
 | 단계 | 구현·자동 검증된 범위 | 사용자 환경에서 남은 항목 |

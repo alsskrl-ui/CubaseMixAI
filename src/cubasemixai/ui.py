@@ -45,7 +45,7 @@ def create_app(workflow: Workflow, token: str | None = None) -> FastAPI:
             raise HTTPException(400, "Backup and current-value confirmation required")
         try:
             return workflow.decide(ident, body.approve)
-        except (ValueError, KeyError) as exc:
+        except (ValueError, KeyError, OSError, RuntimeError) as exc:
             raise HTTPException(400, str(exc)) from exc
     class ApplyBody(BaseModel):
         dry_run: bool = True
@@ -80,14 +80,20 @@ def create_app(workflow: Workflow, token: str | None = None) -> FastAPI:
         from .calibration import calibration_report
         from .mastering import master_chain
         from .render import create_render_job, finish_render_job
+        from .remote.tools import remote_status, remote_tracks, remote_inspect, remote_plugins, remote_propose, remote_propose_plugin
         functions = {f.__name__: f for f in (compare, analyze_stems, propose_reference, compare_sections,
                      evaluate_render, export_ab, backup_project, verify_backup, restore_project, clap_compare,
-                     calibration_report, master_chain, create_render_job, finish_render_job)}
+                     calibration_report, master_chain, create_render_job, finish_render_job,
+                     remote_status, remote_tracks, remote_inspect, remote_plugins, remote_propose, remote_propose_plugin)}
         if operation not in functions:
             raise HTTPException(404, "Unknown operation")
         if operation in {"propose_reference", "create_render_job", "finish_render_job"}:
             body["state_dir"] = str(workflow.root)
         try:
+            if operation in {"remote_propose", "remote_propose_plugin"}:
+                from .remote.workflow import RemoteWorkflow
+                modern = RemoteWorkflow(workflow)
+                return (modern.propose if operation == "remote_propose" else modern.propose_plugin)(**body)
             return functions[operation](**body)
         except (ValueError, KeyError, OSError, TypeError, ImportError, RuntimeError) as exc:
             raise HTTPException(400, str(exc)) from exc

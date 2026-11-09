@@ -33,6 +33,7 @@ with tempfile.TemporaryDirectory() as directory:
             errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
             page.goto('http://127.0.0.1:8765')
             page.locator('#token').fill('browser-test-token')
+            page.select_option('#operation','compare')
             page.locator('#f-mix').fill(str(a));page.locator('#f-reference').fill(str(b))
             page.locator('#run').click()
             page.wait_for_function("document.querySelector('#result').textContent.includes('lufs_i')")
