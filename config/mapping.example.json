@@ -1,0 +1,14 @@
+{
+  "port": "CubaseMixAI",
+  "controls": {
+    "vocal.volume": {
+      "channel": 1,
+      "cc": 20,
+      "unit": "dB",
+      "verified": false,
+      "max_delta": 3.0,
+      "points": [[-30, 20], [-12, 60], [-6, 80], [0, 100], [6, 120]],
+      "note": "ILLUSTRATIVE ONLY. Replace every point with measured Cubase values before setting verified=true."
+    }
+  }
+}
