@@ -760,11 +760,13 @@ $ProposalId = '실제 제안 ID로 교체'
 ```
 
 <a id="clap"></a>
-## 8. CLAP AI 청취 설치와 사용
+## 8. CLAP 간단 설치와 사용
 
-### 8-1. 한 번만 설치
+CLAP은 오디오와 문장 설명의 임베딩 유사도를 비교합니다. 밝기·펀치감·공간감에 관한 문장과 WAV가 얼마나 어울리는지 참고할 수 있습니다. 음질을 판정하거나 자동으로 EQ 값을 찾지는 않습니다.
 
-UI/Codex를 종료한 상태에서 별도 PowerShell 창을 열고 설치합니다.
+### 설치 (한 번)
+
+PowerShell에서 CPU용 PyTorch, 선택 의존성, 로컬 모델을 설치합니다.
 
 ```powershell
 Set-Location C:\CubaseMixAI
@@ -773,36 +775,30 @@ Set-Location C:\CubaseMixAI
 & .\.venv\Scripts\cubasemixai.exe setup-ai C:\CubaseMixAI\.cubasemixai\models\clap
 ```
 
-공식 `laion/clap-htsat-unfused` 모델을 내려받고 revision과 SHA-256을 기록합니다. 모델은 약 590MB이고 PyTorch 및 설치·변환 과정에 추가 공간이 필요합니다. 인터넷 연결이 필요하며 CPU에서도 실행됩니다. `setup-ai`는 새 빈 모델 폴더를 요구하므로 이미 설치한 폴더에 반복 실행하지 않습니다. 실패 후 부분 파일이 남았다면 새 이름의 빈 폴더를 사용하고 그 경로를 이후 명령에도 반영하세요.
+모델 다운로드는 약 590MB이며 최초 설치 때 인터넷이 필요합니다. 설치 후 추론은 로컬에서 실행되고 자동 다운로드하지 않습니다.
 
-공식 PyTorch 가중치는 torch 2.6+의 `weights_only=True`로 로드한 뒤 safetensors로 저장합니다. 추론 시 모델을 자동 다운로드하지 않습니다. 설치 후 UI와 Codex를 다시 실행합니다.
+### 비교
 
-### 8-2. 실제 실행 확인
+두 WAV를 Cubase에서 내보냅니다. 각 파일은 0.4–30초, mono 또는 stereo여야 합니다.
 
 ```powershell
 $App = 'C:\CubaseMixAI\.venv\Scripts\cubasemixai.exe'
-$env:OMP_NUM_THREADS = '2'
-& $App listen C:\CubaseMixAI\audio\mix-clip.wav C:\CubaseMixAI\audio\reference-clip.wav C:\CubaseMixAI\.cubasemixai\models\clap
+& $App listen C:\CubaseMixAI\audio\mix.wav C:\CubaseMixAI\audio\reference.wav C:\CubaseMixAI\.cubasemixai\models\clap
 ```
 
-임베딩 유사도, `brightness/punch/space`, 프롬프트 margin 차이, window spread, 불확실성이 표시됩니다. 30초를 넘는 파일은 Cubase에서 대응 구간을 짧게 내보내세요.
+Codex에는 MCP의 `clap_compare`로 두 파일을 비교해 달라고 요청하면 됩니다. 결과는 임베딩 유사도, 밝기·펀치·공간 문장 친화도와 불확실성을 포함합니다. 30초 파일에서는 시작·중간·끝의 최대 10초 구간을 비교합니다. stereo 입력은 모델 분석에 더 큰 에너지를 가진 채널을 씁니다.
 
-- 최대 10초씩 시작·중간·끝 window를 결정적으로 선택하고 레벨을 정규화합니다.
-- stereo는 에너지가 더 큰 채널을 분석합니다. 스테레오 폭은 DSP 지표로 확인합니다.
-- 프롬프트 친화도와 코사인 유사도는 품질 점수나 보정된 확률이 아닙니다.
-- DSP와 CLAP 근거가 충돌하면 관련 EQ/컴프레서 후보를 사람의 청취 검토로 넘깁니다.
+요청 예:
 
-CLI에서 CLAP을 포함한 변경안을 한 번에 생성하려면:
-
-```powershell
-& $App reference-plan C:\CubaseMixAI\audio\mix-clip.wav C:\CubaseMixAI\audio\reference-clip.wav C:\CubaseMixAI\config\mapping.local.json C:\CubaseMixAI\current.local.json --mode master --model-dir C:\CubaseMixAI\.cubasemixai\models\clap
+```text
+clap_compare로 C:/CubaseMixAI/audio/mix.wav와
+C:/CubaseMixAI/audio/reference.wav를 비교해 줘.
+model_dir는 C:/CubaseMixAI/.cubasemixai/models/clap이야.
+유사도와 brightness/punch/space 근거·불확실성을 설명하고,
+이 결과만으로 Cubase를 변경하지 마.
 ```
 
-실제 모델 smoke test를 다시 실행하려면 프로젝트 루트에서 다음을 사용합니다. 합성 음원으로 모델 실행 경로를 확인하며 실제 곡의 청취 품질을 검증하는 테스트는 아닙니다.
-
-```powershell
-& .\.venv\Scripts\python.exe scripts\validate_ai.py C:\CubaseMixAI\.cubasemixai\models\clap
-```
+CLAP 결과가 DSP 측정과 다르면 자동 변경하지 말고 두 WAV를 레벨 맞춰 들어보세요. CLAP 점수는 보정된 확률이나 인간의 청취를 대체하는 판정이 아닙니다.
 
 <a id="sections"></a>
 ## 9. 스템·후렴·드롭 분석
