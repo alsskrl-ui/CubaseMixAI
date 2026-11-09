@@ -13,6 +13,8 @@
 
 ## 2. Generic Remote
 
+처음 연결한다면 [README의 킥 Volume 화면별 가이드](../README.md#kick-volume)를 따라 위·아래 표를 각각 설정하세요. CC21 수동 테스트, 실측 dB 등록, Codex 요청 예시까지 포함되어 있습니다.
+
 1. Cubase Studio Setup(스튜디오 설정)에서 Generic Remote를 추가합니다. Cubase 10.5의 Generic Remote이며 Cubase 12 이후 MIDI Remote API가 아닙니다.
 2. MIDI Input을 `CubaseMixAI`, MIDI Output은 필요하지 않으면 Not Connected로 설정합니다. MIDI Port Setup에서 이 포트가 연주용 All MIDI Inputs로 섞이지 않게 합니다.
 3. 위쪽 표의 제어 항목에 Control Change, 채널 1, 주소(CC) 20, 최대값 127, 수신 플래그를 설정합니다.
@@ -25,7 +27,15 @@
 
 ## 3. EQ / compressor
 
-Cubase Track Quick Controls에 해당 EQ 또는 compressor 파라미터를 할당합니다. Generic Remote에서 접근 가능한 Quick Control을 별도 CC에 연결하고 화면에서 정확히 어떤 파라미터가 움직이는지 확인합니다. unit은 `dB`, `Hz`, `ratio`, `ms` 등으로 구분하고 각 파라미터마다 실측 points와 max_delta를 지정합니다. 주파수/시간은 비선형일 수 있으므로 볼륨 측정값을 재사용하지 않습니다. 장치 또는 플러그인에 따라 노출되지 않으면 수동 조작으로 남깁니다.
+[README의 Track Quick Controls 상세 가이드](../README.md#kick-quick-controls)를 따릅니다.
+
+1. Kick 트랙의 Inspector Quick Controls 슬롯에 실제 compressor threshold/ratio/attack/release와 EQ gain을 할당합니다.
+2. Studio Setup의 **Track Quick Controls** 장치에서 loopMIDI 입력과 슬롯별 CC30–34 수신을 설정합니다. **VST Quick Controls**와 구분합니다.
+3. Kick을 선택한 상태에서 각 CC가 정확한 플러그인 파라미터를 움직이는지 확인합니다.
+4. 정규화된 QC 값이 아니라 플러그인의 실제 dB/ratio/ms로 각 points와 max_delta를 따로 측정합니다. 노출되지 않는 파라미터는 수동 조작으로 남깁니다.
+5. 선택 의존 QC는 대상 트랙을 선택한 한 세션에서만 검토·승인·적용합니다.
+
+**이 경로는 현재 선택한 트랙을 따라갑니다.** 프로그램은 Cubase의 선택 트랙을 읽거나 바꾸지 못하며 `kick.*` 같은 제어 이름이 대상 선택을 강제하지 않습니다. 여러 스템의 볼륨을 Generic Remote의 실제 채널에 고정한 것과는 다른 연결입니다. 직접 고정 트랙/플러그인 파라미터를 노출하는 Generic Remote 경로가 있다면 실제 지원 여부를 별도로 확인하세요.
 
 ## 4. 실기기 수락 기록
 

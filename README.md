@@ -184,47 +184,143 @@ UI에서 제공하는 작업은 분석·구간/스템 비교·AI 청취·변경�
 <a id="midi"></a>
 ## 4. Cubase·loopMIDI 연결과 실측 매핑
 
-**WAV 분석만 사용할 때는 이 장을 건너뛸 수 있습니다. 실제 MIDI 적용 전에 완료하세요.** 자세한 Cubase 항목은 [Windows/Cubase 연결 문서](docs/windows-cubase.md)를 함께 참고합니다.
+이 장의 목표는 **① 킥 볼륨 하나를 먼저 움직여 보고 ② 킥 컴프레서/EQ까지 연결하는 것**입니다. WAV 분석만 할 때는 건너뛰어도 됩니다. 처음부터 모든 스템과 플러그인을 연결하지 말고 킥 한 트랙에서 확인한 뒤 늘려가세요.
 
-### 4-1. 테스트 프로젝트와 MIDI 포트 준비
+### 4-1. MIDI CC가 무엇이고 어디에 연결하는가
 
-1. Cubase의 **Back up Project**로 미디어를 포함한 작업 복사본을 만듭니다. 원본 프로젝트에서 첫 제어 테스트를 하지 않습니다.
-2. loopMIDI를 실행하고 `+` 버튼으로 이름이 **CubaseMixAI**인 포트를 만듭니다.
-3. loopMIDI를 켜둔 상태로 Cubase를 실행합니다. 포트가 보이지 않으면 Cubase를 다시 시작합니다.
-4. PowerShell에서 확인합니다.
+CC는 숫자로 된 제어 메시지입니다. 다음 세 가지를 구분하세요.
+
+| 항목 | 예 | 의미 |
+|---|---|---|
+| MIDI Channel | `1` | 메시지를 구분하는 채널. 킥 오디오 트랙 번호가 아님 |
+| CC 번호/Address | `21` | 어떤 조절기를 움직일지 구분하는 주소 |
+| CC 값/Value | `64` | 해당 조절기의 위치, 0–127 정수. 64가 0dB라는 뜻은 아님 |
+
+프로그램에서 `채널 1 / CC21 / 값 64`를 보내면, Cubase 설정이 **CC21을 킥 Volume으로 연결**하고 있어야 킥 페이더가 움직입니다. WAV에 MIDI CC를 넣는 방식이 아니라 **Cubase의 믹서/플러그인 파라미터를 제어**하는 방식입니다. 오디오 스템을 MIDI 트랙으로 바꿀 필요가 없습니다.
+
+이 매뉴얼에서는 두 연결 방식을 사용합니다.
+
+| 조절 대상 | Cubase에서 연결할 곳 | 대상이 정해지는 방식 |
+|---|---|---|
+| 킥·808·보컬 등 트랙 Volume | Generic Remote | 아래 표에서 지정한 트랙을 대상에 연결 |
+| 킥 플러그인의 threshold·ratio·EQ gain | Track Quick Controls | 현재 선택한 트랙의 Quick Control 슬롯을 제어 |
+
+**Track Quick Controls는 선택한 트랙에 따라 대상이 달라집니다.** 설정 파일에 `kick.compressor.threshold`라고 써도 Cubase가 자동으로 킥 트랙을 선택해 주지는 않습니다. 플러그인 제어는 한 트랙씩 진행하며, 제안 생성부터 실제 적용이 끝날 때까지 그 트랙을 선택해 둡니다.
+
+Cubase 10.5의 메뉴/항목 이름은 언어·에디션에 따라 다를 수 있습니다. 아래는 일반적인 영문 표기를 병기한 절차이며, 실제 대상과 동작은 사용자 Cubase에서 확인해야 합니다. Cubase 12 이후의 MIDI Remote 화면 대신 **Generic Remote / Track Quick Controls**를 사용합니다.
+
+### 4-2. loopMIDI 포트와 테스트 프로젝트 준비
+
+1. Cubase에서 **File → Back up Project**로 미디어가 포함된 별도 작업 복사본을 만듭니다.
+2. loopMIDI를 실행합니다.
+3. 새 포트 이름에 **CubaseMixAI**를 입력하고 `+` 버튼으로 추가합니다.
+4. 목록에 포트가 나타났는지 확인하고 loopMIDI를 켜둡니다.
+5. Cubase를 실행해 작업 복사본을 엽니다. 이미 켜져 있었고 포트가 보이지 않는다면 Cubase를 다시 실행합니다.
+6. 킥 스템이 있는 오디오 트랙 이름을 알아보기 쉽게 **Kick**으로 정합니다.
+7. PowerShell에서 프로그램이 해당 출력을 찾는지 확인합니다.
 
 ```powershell
+$App = 'C:\CubaseMixAI\.venv\Scripts\cubasemixai.exe'
 & $App ports
 ```
 
-출력 목록에 실제 포트 이름이 나와야 합니다. loopMIDI에서 만든 이름이 다르면 매핑 JSON에도 그 이름을 정확히 입력하세요.
+출력 목록의 **정확한 포트 문자열**을 기록합니다. 드라이버가 접미사를 붙여 `CubaseMixAI 0`처럼 표시한다면 프로그램의 JSON `port`와 아래 수동 테스트 코드에서도 그 문자열을 사용합니다. Cubase의 드롭다운 표기와 Python 목록의 표기가 완전히 같다고 가정하지 마세요.
 
-### 4-2. Cubase 10.5 Generic Remote 설정
+### 4-3. Cubase MIDI Port Setup 설정
 
-1. **Studio → Studio Setup**에서 **Generic Remote**를 추가합니다.
-2. MIDI Input을 `CubaseMixAI`로 지정합니다. 출력/피드백을 사용하지 않는다면 MIDI Output은 Not Connected로 둡니다.
-3. MIDI Port Setup에서 이 포트가 연주 트랙의 All MIDI Inputs에 섞이지 않게 합니다.
-4. 위쪽 제어 표에서 MIDI Status를 **Control Change**, MIDI Channel을 **1**, Address를 **20**, Max Value를 **127**, 수신 플래그를 설정합니다.
-5. 아래쪽 표에서 이 항목을 테스트 보컬 트랙의 **Volume**에 연결합니다. 표시명과 옵션은 Cubase 언어·에디션에 따라 다를 수 있으므로 실제 움직이는 트랙을 확인합니다.
-6. 설정을 XML로 내보내 별도 보관합니다.
+1. Cubase 상단 메뉴 **Studio → Studio Setup**을 엽니다.
+2. 왼쪽 **MIDI Port Setup**을 선택합니다.
+3. `CubaseMixAI` 입력 포트를 찾습니다.
+4. 이 입력의 **In 'All MIDI Inputs'** 체크를 해제합니다. 원격 제어 CC가 일반 악기 트랙의 연주 입력으로 섞이는 것을 막기 위한 설정입니다.
+5. 포트 자체를 비활성화하지는 않습니다. 다음 단계에서 remote 입력으로 선택할 수 있어야 합니다.
 
-예를 들어 `vocal.volume`에 채널 1 / CC20, `kick.volume`에 채널 1 / CC21을 사용할 수 있습니다. 이는 주소 배정 예시이며 프로그램이 Cubase에 자동 생성하는 설정은 아닙니다. 트랙 순서를 바꾸면 대상이 달라지지 않는지도 확인합니다.
+포트가 목록에 없다면 여기서 다른 설정을 추측하기보다 loopMIDI 실행 여부 → 포트 생성 → Cubase 재시작 순서로 확인합니다.
 
-### 4-3. CC와 dB 측정
+<a id="kick-volume"></a>
+### 4-4. 킥 볼륨: Generic Remote 장치 추가
 
-Cubase 페이더의 dB와 CC 0–127은 선형이라고 가정할 수 없습니다. 테스트 복사본에서 수동 캘리브레이션용 CC를 보내 **각 CC에서 실제 표시된 dB**를 기록합니다. 수동 측정 방법은 [연결 문서의 Generic Remote 절차](docs/windows-cubase.md#2-generic-remote)를 따릅니다. 이 준비 작업을 Codex에게 승인 장치를 우회하는 raw MIDI 도구로 구현하라고 요청하지 않습니다.
+1. 같은 **Studio Setup** 창에서 장치 추가 `+` 메뉴를 엽니다.
+2. **Generic Remote**를 선택합니다.
+3. 왼쪽 목록에서 방금 추가한 Generic Remote를 선택합니다.
+4. 오른쪽의 **MIDI Input**을 loopMIDI의 `CubaseMixAI` 포트로 지정합니다.
+5. **MIDI Output**은 피드백을 사용하지 않는 첫 설정에서는 **Not Connected**로 둡니다.
 
-최소 두 점이 필요하고, 실제 사용할 범위 주변에는 여러 점을 측정하는 것이 좋습니다. 물리값과 CC 모두 엄격히 증가해야 하며 `-∞`는 유한 dB가 아니므로 점으로 사용하지 않습니다. 보간에 쓰지 않은 다른 값으로 오차도 확인합니다.
+실물 MIDI 컨트롤러가 없으므로 **Learn에 의존하지 않고 숫자를 직접 입력**해도 됩니다. 이 화면은 보통 위·아래 두 표로 나뉩니다.
 
-다음 구조를 `C:\CubaseMixAI\measurements.local.json`에 **UTF-8 BOM 없이** 저장합니다. `points: []`는 실측값을 채울 자리이며, 이 상태에서는 매핑 생성이 실패하는 것이 정상입니다.
+- **위쪽 표**: 어떤 MIDI 메시지를 받을지 설정합니다.
+- **아래쪽 표**: 받은 메시지로 Cubase의 무엇을 조절할지 설정합니다.
+
+### 4-5. 위쪽 표: 킥 볼륨용 CC21 등록
+
+기존 제어 행 하나를 사용하거나 행을 추가해 다음처럼 설정합니다.
+
+| 위쪽 표 항목 | 입력할 예시 | 설명 |
+|---|---|---|
+| Control Name | `Kick Volume` | 알아보기 위한 제어 이름 |
+| MIDI Status | `Controller` / `Control Change` | CC 메시지를 받는 타입. Note On을 고르지 않음 |
+| MIDI Channel | `1` | 프로그램 JSON의 channel 1과 일치 |
+| Address | `21` | 킥 볼륨에 배정할 CC 번호 |
+| Max. Value | `127` | 일반 7-bit CC 범위 |
+| Flags | `Receive` / `R` 활성화 | 입력을 받도록 설정 |
+
+Flags 선택창에 Receive/Transmit/Relative 등이 보이면 첫 설정은 **Receive만 사용하고 Transmit·Relative는 사용하지 않습니다.** CC의 절대 위치를 보내는 예제입니다. 아래쪽 동작의 Button/Toggle 같은 버튼 모드도 Volume에는 사용하지 않습니다.
+
+여러 Generic Remote 장치에서 같은 포트·채널·CC를 동시에 받도록 설정하지 마세요. 예전 설정이 있다면 CC21이 다른 항목에도 할당되어 있지 않은지 확인합니다.
+
+### 4-6. 아래쪽 표: CC21을 실제 Kick 트랙 Volume에 연결
+
+위에서 만든 `Kick Volume`에 대응하는 아래쪽 행을 찾습니다. 표의 이름/행 연결이 같은지 확인하고 다음을 지정합니다.
+
+| 아래쪽 표 항목 | 선택할 대상 |
+|---|---|
+| Device | `VST Mixer` 등 믹서 제어 항목 |
+| Channel/Category | 실제 **Kick** 오디오 채널 |
+| Value/Action | **Volume** |
+| Flags | 연속 값 제어. 별도의 Toggle/버튼 동작을 설정하지 않음 |
+
+**Selected Track / Selected Channel처럼 선택을 따라가는 항목 대신 실제 Kick 채널을 고르는 것이 이 예제의 목적입니다.** 메뉴에 표시된 채널 이름과 MixConsole의 실제 트랙을 맞춰 확인하세요. 선택한 bank가 있다면 설정한 bank가 활성 상태인지도 확인합니다.
+
+**Apply → OK**로 반영합니다. Generic Remote 설정 화면의 Export 기능으로 XML을 별도 파일에 보관합니다. 프로젝트의 트랙 순서/구성을 바꾼 후에는 고정 대상으로 생각한 매핑도 실제 Kick을 움직이는지 다시 확인합니다.
+
+### 4-7. 첫 연결 확인과 dB 캘리브레이션
+
+아직 실측 매핑이 없기 때문에 일반 CubaseMixAI apply로는 테스트할 수 없습니다. **초기 캘리브레이션에만 사용하는 수동 CC 송신**으로 연결을 확인합니다. 다음 명령은 앱의 제안·승인 경로 밖에서 실제 CC를 즉시 보냅니다. 재생을 정지하고 모니터 레벨을 낮춘 테스트 복사본에서 사용자가 직접 실행하며, 일반 믹싱 적용에는 아래 방법 대신 프로그램의 승인 절차를 사용합니다.
+
+MixConsole에서 Kick 페이더가 보이게 하고, 자동화가 값을 되돌리지 않는 테스트 상태에서 실행합니다. 포트 문자열은 `ports` 결과에 맞게 바꾸세요.
+
+```powershell
+Set-Location C:\CubaseMixAI
+& .\.venv\Scripts\python.exe -c "import mido; p=mido.open_output('CubaseMixAI'); p.send(mido.Message('control_change', channel=0, control=21, value=64)); p.close()"
+```
+
+**mido 코드의 `channel=0`은 Cubase 화면/매핑 JSON의 채널 1입니다.** 위 명령의 `control=21`은 CC 주소이며 `value=64`는 전송할 위치입니다.
+
+1. Kick Volume만 움직였는지 확인합니다. 다른 트랙이 움직이면 Generic Remote의 아래쪽 대상을 수정합니다.
+2. Kick에 실제로 표시된 dB를 기록합니다. CC64가 몇 dB일지는 미리 가정하지 않습니다.
+3. 명령의 `value=64`를 `48`, `80` 등으로 한 번씩 바꿔 실행하고 각 표시 dB를 기록합니다. 값은 0–127 범위입니다.
+4. 실제 사용할 dB 주변을 추가로 측정합니다. CC0에서 `-∞`가 나오면 그 점은 보간용으로 사용하지 않습니다.
+5. 측정에 쓰지 않은 다른 값도 테스트해 보간 오차를 확인합니다.
+
+| 보낸 CC 값 | Cubase에 표시된 dB |
+|---|---|
+| 48 | 직접 관측해 기록 |
+| 64 | 직접 관측해 기록 |
+| 80 | 직접 관측해 기록 |
+| 추가 측정값 | 직접 관측해 기록 |
+
+이 수동 명령은 MIDI 출력이나 Cubase 적용 응답을 확인해 주지 않습니다. 실제 화면을 관찰하는 단계입니다. 소리가 바뀌지 않으면 페이더뿐 아니라 mute/solo, 라우팅, 실제 재생 중인 트랙도 확인하세요.
+
+### 4-8. 실측값을 프로그램에 등록
+
+`C:\CubaseMixAI\measurements.local.json`을 UTF-8 BOM 없이 저장합니다. 아래의 `points: []`는 빈 측정 자리이므로 그대로는 생성에 실패합니다. 측정값으로 채워야 합니다.
 
 ```json
 {
   "port": "CubaseMixAI",
   "controls": {
-    "vocal.volume": {
+    "kick.volume": {
       "channel": 1,
-      "cc": 20,
+      "cc": 21,
       "unit": "dB",
       "max_delta": 3.0,
       "points": []
@@ -233,23 +329,23 @@ Cubase 페이더의 dB와 CC 0–127은 선형이라고 가정할 수 없습니�
 }
 ```
 
-`points`의 형식은 `[[표시된 dB, 해당 CC], ...]`입니다. 예를 들어 문법상 `[[-12, 60], [-6, 80], [0, 100]]`처럼 쓰지만, **이 숫자는 실측값이 아니므로 그대로 사용하지 마세요.** 저장소의 `mapping.example.json`도 설명용입니다.
+`points`는 **`[[Cubase 표시 dB, 보낸 CC 값], ...]`** 순서입니다. 기록표의 열 순서와 반대이므로 주의하세요. 최소 두 점이 필요하고 물리값과 CC가 모두 엄격히 증가해야 합니다.
 
-실측값을 모두 입력한 후 실행합니다.
+문법 예시는 `[[-12, 60], [-6, 80], [0, 100]]`이지만 **실측값이 아니므로 그대로 넣지 마세요.** `max_delta: 3.0`은 한 제안에서 움직일 물리값 차이의 최대 3dB를 뜻하며, 실제 보간 가능 범위는 `points`가 결정합니다.
 
 ```powershell
-& $App calibrate C:\CubaseMixAI\measurements.local.json C:\CubaseMixAI\config\mapping.local.json --confirmed-measured
-& $App doctor --mapping C:\CubaseMixAI\config\mapping.local.json
+& $App calibrate C:\CubaseMixAI\measurements.local.json C:\CubaseMixAI\config\kick-mapping.local.json --confirmed-measured
+& $App doctor --mapping C:\CubaseMixAI\config\kick-mapping.local.json
 ```
 
-출력 파일이 이미 있으면 덮어쓰지 않습니다. 재측정한 매핑은 `mapping-v2.local.json`처럼 새 이름으로 만드세요. 여러 제어를 등록했다면 **등록한 모든 제어의** 실측점과 검증 여부가 유효해야 합니다.
+생성한 `kick-mapping.local.json`의 `port`, `kick.volume`, channel/cc를 다시 확인합니다. 이미 파일이 있다면 새 이름으로 저장합니다. `calibrate`는 실측값을 등록하는 명령이며 MIDI를 전송하지 않습니다. 확인 옵션이나 `verified: true`만으로 실제 측정이 이루어지지는 않습니다.
 
-독립 관측 파일 `observations.local.json`의 형식은 다음과 같습니다. 숫자는 사용자가 실제로 요청·관측한 값과 허용 오차로 교체합니다.
+독립 관측 결과를 `observations.local.json`으로 기록할 수도 있습니다. 예시 수치는 실제 요청값/관측값으로 교체하세요.
 
 ```json
 [
   {
-    "control": "vocal.volume",
+    "control": "kick.volume",
     "requested": -2.0,
     "observed": -2.1,
     "tolerance": 0.2
@@ -258,25 +354,131 @@ Cubase 페이더의 dB와 CC 0–127은 선형이라고 가정할 수 없습니�
 ```
 
 ```powershell
-& $App calibration-check C:\CubaseMixAI\config\mapping.local.json C:\CubaseMixAI\observations.local.json
+& $App calibration-check C:\CubaseMixAI\config\kick-mapping.local.json C:\CubaseMixAI\observations.local.json
 ```
 
-결과의 `passed`와 각 관측의 `absolute_error`를 확인합니다. 이 명령은 기록한 관측의 오차를 계산하며 실제 CC 전송이나 Cubase readback을 수행하지 않습니다.
+`absolute_error`와 `passed`를 확인합니다. 이 명령 자체가 CC를 전송하거나 Cubase에서 값을 읽는 것은 아닙니다.
 
-### 4-4. EQ·컴프레서·마스터 매핑
+### 4-9. “킥이 너무 튀어나와, 조금 들어가게 해 줘” 사용 예
 
-Cubase Track Quick Controls에 제어할 플러그인 파라미터를 할당하고 Generic Remote의 별도 CC에 연결합니다. 각 제어의 단위·CC·실측점을 따로 등록합니다. 볼륨 캘리브레이션을 EQ나 compressor에 재사용하지 않습니다.
+먼저 MixConsole에서 **현재 킥 볼륨을 직접 확인**합니다. 이후 WAV와 매핑의 경로를 준비해 Codex에 요청합니다.
 
-| 제어 이름 | 단위 | 용도 |
-|---|---|---|
-| `vocal.volume`, `master.volume` | `dB` | 트랙/마스터 레벨 |
-| `master.eq.bass.gain` | `dB` | 해당 대역 EQ gain |
-| `master.compressor.threshold` | `dB` | 컴프레서 threshold |
-| `master.compressor.ratio` | `ratio` | 컴프레서 ratio |
-| `master.compressor.attack`, `master.compressor.release` | `ms` | 수동 설정 또는 명시적 변경안 |
-| `master.limiter.ceiling` | `dB` | 리미터 ceiling |
+```text
+cubasemixai MCP를 사용해 줘.
+전체 믹스: C:/CubaseMixAI/audio/mix.wav
+전체 레퍼런스: C:/CubaseMixAI/audio/reference.wav
+킥 스템: C:/CubaseMixAI/audio/kick.wav
+킥 매핑: C:/CubaseMixAI/config/kick-mapping.local.json
 
-EQ 대역 이름은 `sub/bass/low_mid/mid/presence/air`입니다. 분석용 대역과 실제 플러그인의 주파수/Q가 같다고 가정하지 마세요. 사용 가능한 제어만 등록하면 되며 미등록 제어는 자동 제안에서 건너뜁니다.
+전체 믹스는 compare, 킥 스템은 analyze로 분석해 줘.
+킥이 앞으로 너무 튀어나오는 것이 내 청취 판단이야.
+전체 레퍼런스를 킥 단독 레퍼런스로 취급하지 마.
+나는 Cubase에서 현재 킥 볼륨이 0dB인 것을 확인했어.
+첫 A/B 후보로 kick.volume을 0dB에서 -1dB로 낮추는 pending 제안을
+propose 도구로 만들어 줘. 매핑 범위와 max_delta를 지켜 줘.
+분석 근거와 한계를 설명하고 apply는 dry_run=true까지만 해 줘.
+```
+
+`0dB`는 사용자가 실제 확인한 현재 값으로 바꿉니다. `-1dB` 역시 첫 시험 후보 예시이며 모든 킥에 정답인 값이 아닙니다. 이 예제는 사람이 청취 의도와 첫 후보를 정하고 분석을 검토 근거로 사용하는 방법입니다. 킥 레퍼런스 스템이 따로 있다면 `propose_reference(target=kick)`로 같은 종류의 두 스템을 비교할 수도 있습니다.
+
+UI에서 해당 제안 ID를 확인 → 직접 승인 → 미리보기 → 실제 전송 → MixConsole과 소리 확인 순서로 사용합니다. **매핑을 만드는 것과 매번 변경안을 승인하는 것은 별도**입니다. 상세 적용/복원 절차는 [7장](#approval)을 따릅니다.
+
+<a id="kick-quick-controls"></a>
+### 4-10. 킥 컴프레서·EQ를 Track Quick Controls에 연결
+
+볼륨 테스트가 성공한 뒤 확장합니다. 이 경로는 **선택 트랙을 따라가므로 한 트랙씩** 사용합니다. 다음 예제에서는 Kick을 선택한 상태로 유지합니다.
+
+**A. Kick 트랙의 Quick Control 슬롯에 실제 파라미터 할당**
+
+1. Kick 오디오 트랙을 선택합니다.
+2. Inspector 또는 Channel Settings의 Inserts에서 사용할 컴프레서를 엽니다. 필요한 EQ도 설정합니다.
+3. 프로젝트 창 왼쪽 Inspector에 **Quick Controls** 섹션을 표시합니다. 안 보이면 Inspector 표시/섹션 설정에서 Quick Controls를 켭니다.
+4. Quick Control 1의 파라미터 선택 메뉴를 열고 Kick 트랙의 Inserts 아래 해당 컴프레서의 **Threshold**를 선택합니다.
+5. Quick Control 2에는 같은 플러그인의 **Ratio**, 3에는 **Attack**, 4에는 **Release**를 지정합니다.
+6. Quick Control 5에는 실제 사용할 EQ band의 **Gain**을 지정합니다. EQ 주파수/Q는 먼저 수동으로 정합니다.
+7. Inspector의 각 Quick Control을 마우스로 움직여 **원하는 플러그인의 정확한 노브**가 움직이는지 확인하고 원래 값으로 되돌립니다.
+
+플러그인 파라미터는 실제 노출되는 이름으로 선택합니다. 내부 Channel EQ와 insert EQ는 경로가 다를 수 있습니다. 해당 파라미터가 목록에 노출되지 않으면 현재 연결 경로로는 자동 제어하지 않고 수동 조작으로 남깁니다. Quick Control이 표시하는 정규화 수치/백분율과 플러그인의 실제 dB·ms·ratio를 혼동하지 마세요.
+
+**B. 외부 CC를 Track Quick Controls 슬롯에 연결**
+
+1. **Studio → Studio Setup → Track Quick Controls**를 엽니다. **VST Quick Controls**는 별도 장치이므로 이 예제와 혼동하지 않습니다.
+2. MIDI Input을 같은 loopMIDI `CubaseMixAI` 포트로 선택합니다.
+3. 처음에는 MIDI Output을 Not Connected로 둡니다.
+4. 슬롯 1–5의 수신 메시지를 아래 표대로 설정합니다. 각 행의 MIDI Status는 Controller/Control Change, Channel은 1, Max Value는 127, Flags는 Receive/R입니다.
+5. Apply/OK로 반영합니다. Generic Remote의 볼륨 CC와 중복되지 않도록 합니다.
+
+| Track Quick Controls 슬롯 | CC 주소 예 | Kick에 할당한 실제 대상 | 프로그램 제어 이름 예 | 물리 단위 |
+|---|---|---|---|---|
+| 1 | 30 | 컴프레서 Threshold | `kick.compressor.threshold` | dB |
+| 2 | 31 | 컴프레서 Ratio | `kick.compressor.ratio` | ratio |
+| 3 | 32 | 컴프레서 Attack | `kick.compressor.attack` | ms |
+| 4 | 33 | 컴프레서 Release | `kick.compressor.release` | ms |
+| 5 | 34 | EQ 저역 band Gain | `kick.eq.bass.gain` | dB |
+
+이는 번호 배정 예시이며 플러그인 제조사가 미리 정해둔 CC가 아닙니다. Quick Control 슬롯이 플러그인 파라미터로 메시지를 전달하므로 플러그인 자체의 MIDI Learn 기능을 사용할 필요는 없습니다.
+
+**C. 실제 수신·단위·캘리브레이션 확인**
+
+Kick을 선택한 상태에서 4-7의 수동 테스트 코드의 `control=21`을 테스트할 주소(예: Threshold는 `control=30`)로 바꾸고, 서로 다른 CC 값을 보내 실제 플러그인의 dB/ratio/ms를 기록합니다. 선택을 바꾸지 말고 각 파라미터를 하나씩 측정한 뒤 초기값을 복원합니다.
+
+매핑 파일에 해당 제어를 추가합니다. 다음 항목은 `controls` 안에 넣는 형식 예시로, 빈 points는 반드시 실측값으로 채워야 합니다.
+
+```json
+{
+  "kick.compressor.threshold": {
+    "channel": 1,
+    "cc": 30,
+    "unit": "dB",
+    "max_delta": 1.0,
+    "points": []
+  },
+  "kick.compressor.ratio": {
+    "channel": 1,
+    "cc": 31,
+    "unit": "ratio",
+    "max_delta": 0.2,
+    "points": []
+  },
+  "kick.eq.bass.gain": {
+    "channel": 1,
+    "cc": 34,
+    "unit": "dB",
+    "max_delta": 1.0,
+    "points": []
+  }
+}
+```
+
+EQ 주파수/Attack/Release 같은 비선형 파라미터는 사용 구간의 측정점을 충분히 기록합니다. 현재 보간기는 엄격히 증가하는 물리값/CC만 지원하므로 역방향·계단형 등 조건에 맞지 않는 제어를 억지로 등록하지 마세요. 모든 측정이 끝나면 새 매핑 파일명으로 `calibrate`를 실행합니다. 입력에 미완료 제어가 있으면 전체 매핑이 거부됩니다.
+
+**D. 여러 스템을 다룰 때의 제한**
+
+- Generic Remote에서 실제 트랙에 연결한 Volume은 서로 다른 CC로 여러 트랙을 제어할 수 있습니다.
+- Track Quick Controls의 슬롯 번호/CC는 장치 설정이며 **트랙 선택에 따라 같은 CC의 실제 대상이 바뀝니다.** Kick에서 CC30이 킥 threshold였어도 Vocal을 선택하면 보컬의 슬롯 1을 움직일 수 있습니다.
+- 프로그램은 현재 선택된 Cubase 트랙을 읽거나 고정하지 않습니다. `kick.*`라는 이름은 확인을 돕는 이름이며 자동 선택 명령이 아닙니다.
+- 선택 의존 QC는 킥용·보컬용 매핑을 분리하고, 해당 트랙을 선택한 한 세션에서만 사용합니다. 같은 채널/CC를 서로 다른 제어로 한 매핑 파일에 중복 등록할 수도 없습니다.
+- 제안 생성 후 다른 트랙/플러그인/프리셋을 선택했다면 기존 제안을 그대로 적용하지 말고 대상·현재 값·캘리브레이션을 다시 확인합니다.
+- 고정 트랙/플러그인 파라미터가 Generic Remote의 대상 목록에 직접 노출된다면 그 경로를 사용할 수 있지만, 모든 플러그인이 지원한다고 가정하지 않습니다.
+
+따라서 **모든 스템의 Volume 제어**와 **모든 스템의 플러그인 파라미터를 선택과 무관하게 동시 제어**는 같은 기능이 아닙니다. 현재 프로그램에서 선택 의존 QC는 한 트랙씩 검토·승인·적용합니다.
+
+### 4-11. 연결이 안 될 때 확인 순서
+
+| 증상 | 먼저 확인할 곳 |
+|---|---|
+| `ports`에 포트가 없음 | loopMIDI 실행/포트 생성, 실제 Python 출력 목록 |
+| Cubase에서 포트가 없음 | loopMIDI를 먼저 켠 뒤 Cubase 재시작 |
+| 아무 페이더도 움직이지 않음 | Generic Remote의 Input, Channel 1, CC21, Receive, Apply, 활성 bank |
+| 다른 트랙이 움직임 | 아래 표의 실제 채널 선택, Selected Track 지정 여부, 트랙 순서 변경 |
+| 여러 노브가 동시에 움직임 | 같은 CC 중복 수신 장치, QC와 Generic Remote 주소 중복, 피드백 루프 |
+| 움직인 값이 바로 되돌아옴 | 해당 트랙/파라미터의 자동화 Read와 기존 automation 데이터 확인. Write는 의도 없이 켜지 않기 |
+| Inspector QC는 움직이나 플러그인 노브가 안 움직임 | 슬롯에 할당한 실제 parameter, plugin/bypass와 선택 트랙 |
+| 다른 트랙 선택 후 플러그인이 잘못 움직임 | Track Quick Controls의 선택 의존 동작. 원래 대상 트랙과 현재 값 재확인 |
+| EQ/컴프레서 값의 단위가 맞지 않음 | QC 정규화 값이 아니라 실제 플러그인 표시값으로 측정했는지 확인 |
+| 스템 원본 파일이 바뀌지 않음 | MIDI는 믹서/플러그인을 움직임. 결과 오디오는 Cubase에서 새 WAV로 내보내기 |
+
+연결 후에는 Generic Remote XML, Track Quick Controls 설정, 트랙별 파라미터 할당과 실측 매핑 파일을 함께 보관합니다. XML이나 프로젝트 복사 하나만으로 모든 설정이 복원된다고 가정하지 말고 재실행 후 한 제어부터 다시 확인하세요.
 
 <a id="mcp"></a>
 ## 5. Codex에 로컬 MCP 서버 등록
