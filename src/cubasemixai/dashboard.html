@@ -7,6 +7,8 @@
 <script>
 const token=document.querySelector('#token'),message=document.querySelector('#message'),result=document.querySelector('#result');
 const definitions={
+remote_propose_reference_volumes:{label:'레퍼런스 스템 기준 트랙 페이더 묶음 제안',fields:[['track_pairs','트랙 identity/tag와 현재·레퍼런스 WAV 경로 목록 (JSON)','json','[]'],['max_track_step_db','트랙별 최대 이동량 (dB)','number','1'],['reason','변경 이유','text','레퍼런스 스템과 비교한 첫 단계']]},
+remote_propose_master_peak:{label:'렌더 WAV 피크 기준 마스터 페이더 제안',fields:[['target','remote_tracks에서 받은 master target','json','{}'],['object_id','실제 master fader object ID','number','0'],['parameter_tag','remote_inspect에서 받은 Volume tag','number','0'],['master_wav','트랙 변경 후 Cubase에서 새로 렌더한 WAV'],['target_peak_db','출력 피크 목표 (dBFS)','number','-6'],['peak_metric','sample_peak_dbfs 또는 true_peak_estimate_dbtp','text','sample_peak_dbfs'],['max_step_db','최대 fader 이동량 (dB)','number','3']]},
 remote_status:{label:'Cubase 15 연결·API 기능 확인',fields:[]},
 remote_tracks:{label:'Cubase 15 실제 트랙 목록',fields:[]},
 remote_inspect:{label:'Cubase 15 대상 파라미터 조회',fields:[['target','트랙 목록에서 받은 target 객체','json','{}'],['object_id','조회할 object ID (정수)','number','0']]},

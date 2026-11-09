@@ -105,7 +105,7 @@ Cubase의 detection 이름은 위 기본 loopMIDI 이름이고, JSON은 Python�
 
 ## 4. Codex MCP 등록과 첫 조회
 
-기존 `cubasemixai` MCP 등록을 그대로 사용할 수 있습니다. Python 패키지를 업데이트하고 Codex를 재시작하면 **29개 도구**가 조회되어야 합니다. 기본 등록:
+기존 `cubasemixai` MCP 등록을 그대로 사용할 수 있습니다. Python 패키지를 업데이트하고 Codex를 재시작하면 **31개 도구**가 조회되어야 합니다. 기본 등록:
 
 ```powershell
 codex mcp add cubasemixai --env 'CUBASEMIXAI_STATE_DIR=C:\CubaseMixAI\.cubasemixai' --env 'OMP_NUM_THREADS=2' -- 'C:\CubaseMixAI\.venv\Scripts\cubasemixai-mcp.exe'
@@ -190,10 +190,47 @@ remote_propose_plugin을 호출해 pending 제안만 만들어줘.
 
 현재 삽입 경로는 32자리 hex UID를 가진 catalog 플러그인, 빈 슬롯만 지원합니다. 이름으로 UID를 만들어 내지 않습니다. 기존 플러그인 교체·삭제, preset 불러오기, plugin 삽입의 자동 복원은 지원하지 않습니다. 새 플러그인의 기본값도 곡에 맞는 설정이라고 가정하지 말고 삽입 후 실제 파라미터를 다시 조회합니다.
 
+## 대응 스템으로 여러 트랙 페이더 제안, 이어서 마스터 피크 맞추기
+
+이 작업은 **두 번에 나눕니다**. 먼저 대응 current/reference stem으로 트랙 페이더 묶음을 만들고 적용합니다. 그 후 Cubase에서 새 마스터 WAV를 렌더해 실제 피크를 측정하고, 별도 마스터 페이더 제안을 만듭니다. 트랙 페이더를 바꾸면 합산 피크가 달라지므로 마스터 측정은 새 렌더 뒤에 합니다.
+
+1. Cubase에서 킥, 베이스, 보컬 등 각 트랙의 current stem과 같은 역할의 reference stem을 내보냅니다. 전체 레퍼런스 스테레오만으로 트랙별 페이더를 추론하지 않습니다.
+2. `remote_tracks`로 현재 세션의 track target을 받고, 각 트랙·Stereo Out의 `remote_inspect` 결과에서 실제 Volume object/tag를 확인합니다.
+3. `remote_propose_reference_volumes`에 각 `target`, `object_id`, `parameter_tag`, `mix_wav`, `reference_wav` 쌍을 명시해 전달합니다. 도구는 각 stem의 integrated LUFS 차이를 계산해 기본 최대 1 dB씩 조정하는 하나의 pending batch를 만듭니다. 이미 맞는 트랙은 건너뜁니다.
+4. 승인 UI에서 모든 트랙의 LUFS, 현재 fader, 제안 이동량을 확인하고 한 번 승인합니다. 적용은 트랙별 순차 처리이며 각 fader를 다시 읽습니다. 도중 연결이 끊기면 일부만 적용됐을 수 있어 `uncertain`이 되며 자동 재전송하지 않습니다. 완전히 검증된 batch만 묶음 복원 제안을 지원합니다.
+5. batch 적용 후 Cubase에서 새 마스터 WAV를 렌더하고 `remote_propose_master_peak`에 Stereo Out Volume 정보와 WAV를 지정합니다. 기본 `peak_metric=sample_peak_dbfs`, `target_peak_db=-6`은 렌더된 출력의 sample peak를 -6 dBFS로 맞추려는 목표입니다. 한 번에 최대 3 dB까지 master fader 변경안을 만듭니다.
+6. master 제안을 승인·적용한 뒤 다시 렌더하고 측정합니다. compressor/limiter, automation, routing이 있으면 fader 이동과 출력 피크가 정확히 1:1로 움직이지 않을 수 있어 반복 측정과 청취가 필요합니다.
+
+Codex 요청 예:
+
+```text
+아래에 지정한 현재 믹스 stem과 대응 reference stem만 짝지어 사용해.
+먼저 remote_tracks와 remote_inspect로 실제 track target과 Volume tag를 확인해.
+각 트랙은 최대 1 dB씩만 이동하는 remote_propose_reference_volumes 묶음 제안을 만들어.
+이 단계에는 Stereo Out을 넣지 말고, 마스터 피크는 새 WAV를 렌더한 다음 단계에서 다뤄.
+각 트랙의 stem LUFS 차이와 제안 fader 값을 보여주고 적용은 하지 마.
+```
+
+트랙 묶음을 적용하고 새 master WAV를 내보낸 뒤:
+
+```text
+새로 렌더한 C:/CubaseMixAI/audio/master-after-tracks.wav를 기준으로
+remote_propose_master_peak을 호출해 Stereo Out sample peak를 -6 dBFS로 맞추는
+최대 3 dB fader 제안을 만들어. remote_tracks/remote_inspect에서 얻은 실제 master target,
+object_id, Volume parameter_tag를 사용하고, master_wav는 위 파일로 해.
+현재 peak, 계산된 fader 이동량, 남은 차이를 보여줘. 아직 승인하거나 적용하지 마.
+```
+
+이 도구는 track/stem 이름을 자동 추측하지 않습니다. 최대 32쌍을 입력할 수 있고, fader가 host에서 dB 단위로 노출되어야 합니다. LUFS 차이는 시작 후보일 뿐입니다. 서로 다른 arrangement/processing의 stem을 그대로 맞추거나 전체 레퍼런스 stereo를 모든 트랙에 적용하면 의도와 다른 믹스가 될 수 있습니다.
+
+각 `track_pairs` 원소에는 `target`(remote_tracks의 해당 track 전체 객체), `object_id`와 `parameter_tag`(remote_inspect에서 확인), `mix_wav`, `reference_wav`가 필요합니다. 마스터 단계는 새로 렌더한 `master_wav`, Stereo Out의 같은 host identity/Volume tag, `target_peak_db=-6`, `peak_metric=sample_peak_dbfs`로 `remote_propose_master_peak`을 별도로 호출합니다. 이 도구가 만드는 것도 pending 제안이며 적용 전에는 로컬 승인 UI를 사용합니다.
+
+**구분:** “master fader를 -6 dB로 놓기”는 fader 위치입니다. 여기서 목표로 하는 “master output peak -6 dBFS”는 렌더 파일의 피크입니다. 두 값은 서로 같지 않습니다. `true_peak_estimate_dbtp` metric도 선택할 수 있지만 4x oversampling 추정치이지 인증 true-peak meter 결과는 아닙니다.
+
 ## 8. 실제 검증 목록과 한계
 
 - [ ] Cubase 15의 정확한 build·edition과 API capabilities 기록
-- [ ] driver 로드, 양방향 두 포트 handshake, 29개 MCP 도구 조회
+- [ ] driver 로드, 양방향 두 포트 handshake, 31개 MCP 도구 조회
 - [ ] Kick/Vocal을 따로 만들고 Vocal이 선택된 상태에서 Kick Volume만 바뀌는지 확인
 - [ ] 킥 트랙 재정렬 후 동일 identity를 따라가는지 확인
 - [ ] 대상 삭제·plugin 교체·프로젝트 전환·값 수동 변경 시 기존 제안을 거부하는지 확인

@@ -192,3 +192,107 @@ def test_remote_ui_uses_shared_history_and_local_approval(host_workflow):
     applied=client.post('/apply/'+p['id'],headers=headers,json={'dry_run':False,'confirmed':True})
     assert applied.status_code==200 and applied.json()['proposal']['status']=='verified'
     assert client.post('/restore/'+p['id'],headers=headers,json={}).json()['status']=='pending'
+
+
+class BatchHost:
+    def __init__(self):
+        self.values={10:-12.0,11:-14.0,20:-10.0};self.writes=0;self.fail_at=None
+    @staticmethod
+    def norm(db):return (db+60)/60
+    def __enter__(self):return self
+    def __exit__(self,*args):pass
+    def target(self,object_id):
+        return {'session':'batch-session','object_id':object_id,'unique_id':f'id-{object_id}',
+                'unique_name':'Audio','title':f'Track {object_id}'}
+    def request(self,op,args):
+        if op=='inspect':
+            object_id=args['object_id']
+            return {'object':{k:v for k,v in self.target(object_id).items() if k!='session'},
+                    'parameters':[{'tag':1,'title':'Volume','unit':'dB','plain':self.values[object_id],
+                                   'normalized':self.norm(self.values[object_id])}], 'next_offset':None}
+        if op=='preview':
+            object_id=args['object_id'];current=self.values[object_id];after=args['after']
+            if abs(after-current)>args['max_delta']+1e-6:raise RemoteError('DELTA')
+            target=self.target(object_id);obj={k:v for k,v in target.items() if k!='session'}
+            return {'plan':{'kind':'parameter','target':target,'object':obj,
+                'before':{'normalized':self.norm(current),'plain':current,'tag':1,'title':'Volume','unit':'dB'},
+                'after_normalized':self.norm(after),'after_plain':after,'request':copy.deepcopy(args)}}
+        plan=args['plan'];object_id=plan['object']['object_id']
+        if op=='read':return {'parameter':{'normalized':self.norm(self.values[object_id]),'plain':self.values[object_id]}}
+        if abs(self.norm(self.values[object_id])-plan['before']['normalized'])>1e-6:
+            raise RemoteError('STALE_CURRENT_VALUE')
+        if op=='check':return {'plan':plan}
+        if op=='apply':
+            self.values[object_id]=plan['after_plain'];self.writes+=1
+            if self.fail_at==self.writes:raise OSError('lost feedback after batch write')
+            return {'mutation_sent':True}
+        raise AssertionError(op)
+
+
+def test_reference_volume_batch_requires_one_local_approval_and_verifies_each_fader(tmp_path,monkeypatch):
+    import numpy as np
+    import soundfile as sf
+    import cubasemixai.remote.workflow as remote
+    import cubasemixai.remote.tools as tools
+    from cubasemixai.remote.tools import remote_propose_reference_volumes
+    sr=48000;t=np.arange(sr*2)/sr;dry=.05*np.sin(2*np.pi*220*t)
+    mix=tmp_path/'mix-stem.wav';reference=tmp_path/'reference-stem.wav'
+    sf.write(mix,dry,sr);sf.write(reference,dry*2,sr)
+    host=BatchHost();monkeypatch.setattr(remote,'RemoteClient',lambda:host);monkeypatch.setattr(tools,'RemoteClient',lambda:host)
+    w=Workflow(str(tmp_path/'state'))
+    pairs=[{'target':host.target(i),'object_id':i,'parameter_tag':1,'mix_wav':str(mix),'reference_wav':str(reference)} for i in (10,11)]
+    result=remote_propose_reference_volumes(pairs,state_dir=str(tmp_path/'state'))
+    proposal=result['proposal'];plans=proposal['payload']['plans']
+    assert len(plans)==2 and [p['after_plain'] for p in plans]==[-11.0,-13.0]
+    assert host.writes==0
+    with pytest.raises(ValueError):w.apply(proposal['id'],dry_run=False)
+    w.decide(proposal['id'],True)
+    assert w.apply(proposal['id'])['dry_run'] and host.writes==0
+    applied=w.apply(proposal['id'],dry_run=False)
+    assert applied['proposal']['status']=='verified' and host.writes==2
+    assert len(applied['proposal']['payload']['batch_receipts'])==2
+    restore=w.restore_proposal(proposal['id'])
+    assert restore['payload']['kind']=='batch_parameter' and len(restore['payload']['plans'])==2
+
+
+def test_reference_volume_batch_partial_failure_is_uncertain_and_single_use(tmp_path,monkeypatch):
+    import numpy as np
+    import soundfile as sf
+    import cubasemixai.remote.workflow as remote
+    import cubasemixai.remote.tools as tools
+    from cubasemixai.remote.tools import remote_propose_reference_volumes
+    sr=48000;t=np.arange(sr*2)/sr;dry=.05*np.sin(2*np.pi*220*t)
+    mix=tmp_path/'mix.wav';reference=tmp_path/'ref.wav'
+    sf.write(mix,dry,sr);sf.write(reference,dry*2,sr)
+    host=BatchHost();host.fail_at=2;monkeypatch.setattr(remote,'RemoteClient',lambda:host);monkeypatch.setattr(tools,'RemoteClient',lambda:host)
+    w=Workflow(str(tmp_path/'state'))
+    pairs=[{'target':host.target(i),'object_id':i,'parameter_tag':1,'mix_wav':str(mix),'reference_wav':str(reference)} for i in (10,11)]
+    proposal=remote_propose_reference_volumes(pairs,state_dir=str(tmp_path/'state'))['proposal']
+    w.decide(proposal['id'],True)
+    with pytest.raises(OSError,match='lost feedback'):
+        w.apply(proposal['id'],dry_run=False)
+    saved=w.get(proposal['id'])
+    assert saved['status']=='uncertain' and len(saved['payload']['batch_receipts'])==1
+    with pytest.raises(ValueError):w.apply(proposal['id'],dry_run=False)
+    assert host.writes==2
+
+
+def test_master_peak_proposal_uses_exported_wav_and_fader_unit(tmp_path,monkeypatch):
+    import numpy as np
+    import soundfile as sf
+    import cubasemixai.remote.workflow as remote
+    import cubasemixai.remote.tools as tools
+    from cubasemixai.remote.tools import remote_propose_master_peak
+    sr=48000;t=np.arange(sr*2)/sr;rendered=.05*np.sin(2*np.pi*220*t)
+    wav=tmp_path/'master-after-track-adjustments.wav';sf.write(wav,rendered,sr)
+    host=BatchHost();monkeypatch.setattr(remote,'RemoteClient',lambda:host);monkeypatch.setattr(tools,'RemoteClient',lambda:host)
+    w=Workflow(str(tmp_path/'state'))
+    result=remote_propose_master_peak(host.target(20),20,1,str(wav),state_dir=str(tmp_path/'state'))
+    proposal=result['proposal']
+    assert result['master']['peak_metric']=='sample_peak_dbfs'
+    assert result['master']['target_peak_db']==-6
+    assert result['master']['proposed_fader_step_db']==3
+    assert proposal['payload']['plan']['after_plain']==-7
+    w.decide(proposal['id'],True)
+    assert w.apply(proposal['id'],dry_run=False)['proposal']['status']=='verified'
+    assert host.values[20]==-7

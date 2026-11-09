@@ -4,7 +4,7 @@
 
 ## 자동 테스트
 
-기존 0.3 기준 전체 suite는 **33 passed**였습니다. MIDI 표현 신규 테스트는 별도 실행해 **4 passed**했습니다. 전체 suite는 로컬 환경의 MCP stdio 통합 테스트가 응답 대기에서 멈춰 이번 작업에서 끝까지 완료하지 못했습니다. MCP 서버 도구 목록은 직접 조회해 29개 등록을 확인했습니다.
+기존 0.3 기준 전체 suite는 **33 passed**였습니다. MIDI 표현 신규 테스트 4개와 reference-volume/master-peak batch 테스트 3개를 별도로 통과했습니다. 전체 suite는 로컬 환경의 MCP stdio 통합 테스트가 응답 대기에서 멈춰 이번 작업에서 끝까지 완료하지 못했습니다. MCP 서버 도구 목록은 직접 조회해 31개 등록을 확인했습니다.
 
 - 합성 사인파 RMS, 6.02dB gain/LUFS 관계, 무음·역상·구간 유효성
 - 레퍼런스 기반 수치 후보의 범위·변화량, pending 상태, 근거 WAV 변경 감지
@@ -13,10 +13,12 @@
 - 전후 재렌더 형식·길이, 명명 구간 비교, HTML escaping, A/B LUFS·peak 여유
 - 캘리브레이션 생성 확인 및 독립 관측 오차 판정
 - MIDI 원본 보존, 새 파일만 생성, bounded pitch bend·CC1·channel aftertouch, 지정 곡선 생성과 잘못된 곡선 거부 (신규 집중 테스트 4건 통과)
+- 짝지어진 stem의 LUFS 기반 여러 트랙 fader step, 한 번 승인, fader별 fresh readback·묶음 복원, 부분 전송의 uncertain 단일 사용
+- 새 master WAV sample peak를 -6 dBFS 목표와 비교해 제한된 master fader 변경안을 만들고 승인·재조회
 - 로컬 UI token/Host/Origin/직접 확인, 만료·거절·중복·동시 적용 차단
 - 부분 전송 예외, 재시도 차단, 적용 전 스냅샷과 복원 제안
 - 시뮬레이션 매핑의 승인 후 live 전송 차단
-- MCP 도구 29개 등록 확인 (서버 목록 직접 조회); 승인/raw MIDI 송신 도구 부재
+- MCP 도구 31개 등록 확인 (서버 목록 직접 조회); 승인/raw MIDI 송신 도구 부재
 - 분석 → 제안 → 승인 → mock MIDI → 새 렌더 가져오기 → 평가 → A/B 출력 → 복원 제안 통합
 
 MIDI 전송은 mock sender로 검증했으며 실제 Cubase 동작은 검증하지 않았습니다. 샌드박스에서 로컬 비동기 HTTP가 대기하여 루프백 통신 가능한 실행 환경에서 테스트를 수행했습니다.
