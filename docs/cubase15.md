@@ -13,6 +13,7 @@ Cubase 15에서는 MIDI Remote API가 노출한 믹서 객체를 읽고, 승인�
 | “트랙 목록과 Kick의 Volume 현재값만 보여줘.” | 트랙 identity와 실제 호스트 값을 읽음 |
 | “킥이 너무 앞에 있어. 1 dB 낮추는 안을 만들어. 아직 적용하지 마.” | 실제 단위가 dB인지 확인한 뒤 pending 변경안을 만듦 |
 | “이 빈 Insert 슬롯에 내가 고른 플러그인을 넣는 안을 만들어.” | 지원 API에서 catalog 확인 후 빈 슬롯 대상 제안을 만듦 |
+| “애프터터치를 처음엔 0, 중간엔 80으로 올렸다 끝에서 0으로 내려줘.” | MIDI 전체 구간에 맞춘 채널 애프터터치 곡선을 새 MIDI 파일에 작성 |
 | “믹스와 레퍼런스 WAV 차이를 분석해줘.” | Cubase에서 내보낸 파일을 DSP/선택적 CLAP으로 분석 |
 
 **사용 흐름:** 두 loopMIDI 포트 생성 → MIDI Remote 드라이버 설치·로드 → `remote-status` 확인 → Codex MCP에서 조회·제안 → 로컬 UI에서 직접 승인 → 적용·값 재확인 → Cubase에서 새 WAV를 내보내 청취.
@@ -207,15 +208,33 @@ WAV export와 전체 프로젝트 저장·GUI 대화상자는 이번 backend에�
 <a id="midi-expression"></a>
 ## MIDI 클립에 피치벤드·모듈레이션·애프터터치 추가
 
-이 기능은 Cubase Remote API를 통해 즉시 연주 이벤트를 보내는 기능이 아닙니다. 악기 트랙에서 내보낸 단일 MIDI 클립을 입력해, 표현 이벤트가 추가된 **새 `.mid` 파일**을 만들고 Cubase에서 직접 가져옵니다. WAV는 이미 렌더된 오디오라 pitch bend나 aftertouch를 넣을 수 없습니다. 원본을 덮어쓰지 않으며 이미 pitch bend/CC1/channel aftertouch가 있는 대상 채널은 중복 적용을 막기 위해 거부합니다.
+Codex는 자연어로 설명한 곡선을 MIDI 이벤트로 변환할 수 있습니다. 예를 들어 “처음은 0, 25% 지점에서 15, 60% 지점에서 90, 80%까지 유지한 뒤 끝에서 0”이라고 요청하면 위치와 값을 점 목록으로 만들어 채널 애프터터치 이벤트를 생성합니다.
+
+다만 Cubase 화면을 마우스로 조작해 lane을 직접 그리거나 Cubase 프로젝트를 바꾸는 기능은 아닙니다. 악기 파트 MIDI를 입력받아 표현 이벤트가 추가된 **새 `.mid` 파일**을 만들고, 사용자가 Cubase에 가져오는 방식입니다. WAV는 이미 렌더된 오디오라 pitch bend나 aftertouch를 넣을 수 없습니다. 원본은 덮어쓰지 않으며 이미 pitch bend/CC1/channel aftertouch가 있는 대상 채널은 중복 적용을 막기 위해 거부합니다.
 
 Codex MCP 예시:
 
 ```text
-source.mid를 expressive.mid로 복사하면서 피치가 천천히 불안하게 움직이도록 해줘.
-피치 흔들림은 최대 6 cents, pitch bend range는 악기 설정과 같은 2 semitones로 해.
-원본은 보존하고 결과 파일 경로와 사용한 범위를 알려줘. 모듈레이션과 aftertouch는 추가하지 마.
+source.mid를 expressive.mid로 복사해. MIDI Channel 1의 채널 애프터터치를
+처음 0, 25% 지점 15, 60% 지점 90, 80% 지점 90, 끝 0으로 그려줘.
+점 사이를 부드러운 직선으로 연결하고 초당 20회로 MIDI 이벤트를 만들어.
+피치벤드와 CC1은 넣지 말고 원본은 보존해. 결과 파일 경로와 이벤트 수를 알려줘.
 ```
+
+이 요청은 MCP `add_midi_expression`에 대략 다음 값을 전달합니다 (`channel`은 0부터 시작하므로 MIDI Channel 1은 0입니다).
+
+```json
+{
+  "input_midi": "C:/CubaseMixAI/audio/source.mid",
+  "output_midi": "C:/CubaseMixAI/audio/expressive.mid",
+  "channel": 0,
+  "pitch_wander_cents": 0,
+  "aftertouch_curve": [[0, 0], [0.25, 15], [0.6, 90], [0.8, 90], [1, 0]],
+  "rate_hz": 20
+}
+```
+
+곡선 위치는 첫 음부터 마지막 음까지의 구간을 0–1로 나타내며, 점 사이는 직선 보간합니다. 값 범위는 channel aftertouch와 CC1이 0–127, pitch bend가 -20–20 cents입니다. 현재 aftertouch는 채널 pressure이므로 같은 채널의 동시에 울리는 모든 음에 적용됩니다. polyphonic aftertouch나 노트별 독립 곡선은 지원하지 않습니다. 악기/프리셋이 해당 MIDI 메시지를 지원해야 소리가 달라집니다.
 
 기본값으로 실행하는 같은 CLI 명령:
 
@@ -229,4 +248,4 @@ cubasemixai midi-expression source.mid expressive.mid --pitch-wander-cents 6 --p
 cubasemixai midi-expression source.mid expressive.mid --pitch-wander-cents 6 --pitch-bend-range-semitones 2 --modulation-depth 24 --aftertouch-depth 16 --rate-hz 8
 ```
 
-작업 순서는 **악기 파트 MIDI 내보내기 → 새 파일 생성 → Cubase에 가져오기 → 같은 악기/채널로 라우팅 → 기존 파트와 비교 청취**입니다. 먼저 복사본 프로젝트에서 확인하세요. 6 cents는 기본으로 생성되는 최대 피치 변화량이며, pitch-bend range 값은 악기에서 실제 설정한 semitone 범위와 일치해야 합니다. 잘못 설정하면 흔들림 크기가 예상과 달라집니다. 모듈레이션(CC1)과 channel aftertouch는 신스와 프리셋이 지원해야 소리가 달라집니다. pitch bend와 channel aftertouch는 같은 MIDI 채널에서 동시에 울리는 음에 모두 작용합니다. 기존 파트에 덮어쓰거나 MIDI를 Cubase 프로젝트에 자동 배치하지 않습니다.
+작업 순서는 **악기 파트 MIDI 내보내기 → 새 파일 생성 → Cubase에 가져오기 → 같은 악기/채널로 라우팅 → 기존 파트와 비교 청취**입니다. 먼저 복사본 프로젝트에서 확인하세요. 피치 흔들림은 사용자가 지정한 최대 cents만큼 만들며, pitch-bend range 값은 악기에서 실제 설정한 semitone 범위와 일치해야 합니다. 잘못 설정하면 흔들림 크기가 예상과 달라집니다. 모듈레이션(CC1)과 channel aftertouch는 신스와 프리셋이 지원해야 소리가 달라집니다. pitch bend와 channel aftertouch는 같은 MIDI 채널에서 동시에 울리는 음에 모두 작용합니다. 기존 파트에 덮어쓰거나 MIDI를 Cubase 프로젝트에 자동 배치하지 않습니다.

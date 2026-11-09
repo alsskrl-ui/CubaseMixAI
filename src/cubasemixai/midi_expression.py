@@ -8,6 +8,35 @@ from pathlib import Path
 import mido
 
 
+def _validate_curve(points, name: str, low: float, high: float):
+    if points is None:
+        return None
+    if not isinstance(points, list) or not 2 <= len(points) <= 64:
+        raise ValueError(f"{name} needs 2–64 [position, value] points")
+    clean = []
+    for point in points:
+        if not isinstance(point, (list, tuple)) or len(point) != 2:
+            raise ValueError(f"Each {name} point must be [position, value]")
+        position, value = map(float, point)
+        if not math.isfinite(position) or not math.isfinite(value):
+            raise ValueError(f"{name} points must be finite")
+        if not 0 <= position <= 1 or not low <= value <= high:
+            raise ValueError(f"{name} values must stay within position 0–1 and value {low}–{high}")
+        if clean and position <= clean[-1][0]:
+            raise ValueError(f"{name} positions must increase")
+        clean.append((position, value))
+    if clean[0][0] != 0 or clean[-1][0] != 1:
+        raise ValueError(f"{name} must start at position 0 and end at position 1")
+    return clean
+
+
+def _curve_value(points, position: float) -> float:
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        if position <= x1:
+            return y0 + (y1 - y0) * ((position - x0) / (x1 - x0))
+    return points[-1][1]
+
+
 def _timeline(mid: mido.MidiFile):
     """Return tempo-aware tick/second converters for a type 0/1 MIDI file."""
     changes = [(0, 500_000)]
@@ -58,17 +87,21 @@ def add_midi_expression(
     output_midi: str,
     *,
     channel: int = 0,
-    pitch_wander_cents: float = 6.0,
+    pitch_wander_cents: float = 0.0,
     pitch_bend_range_semitones: float = 2.0,
     modulation_depth: int = 0,
     aftertouch_depth: int = 0,
+    pitch_curve: list[list[float]] | None = None,
+    modulation_curve: list[list[float]] | None = None,
+    aftertouch_curve: list[list[float]] | None = None,
     rate_hz: float = 8.0,
     seed: int = 1,
 ) -> dict:
-    """Add deterministic, smoothed pitch/CC1/channel-pressure motion to a copy.
+    """Add bounded random motion or drawn control curves to a MIDI copy.
 
     The output is for manual import/routing in a DAW. MIDI pitch bend and
     channel pressure affect every sounding note on the selected channel.
+    Curves use [normalized phrase position, value] points and linear ramps.
     """
     source = Path(input_midi).expanduser().resolve()
     destination = Path(output_midi).expanduser().resolve()
@@ -88,6 +121,13 @@ def add_midi_expression(
         raise ValueError("Configured instrument pitch-bend range must be 1–48 semitones")
     if not 0 <= modulation_depth <= 127 or not 0 <= aftertouch_depth <= 127:
         raise ValueError("Modulation and aftertouch depths must be 0–127")
+    pitch_curve = _validate_curve(pitch_curve, "pitch_curve", -20, 20)
+    modulation_curve = _validate_curve(modulation_curve, "modulation_curve", 0, 127)
+    aftertouch_curve = _validate_curve(aftertouch_curve, "aftertouch_curve", 0, 127)
+    if modulation_curve is not None and modulation_depth:
+        raise ValueError("Use modulation_curve or modulation_depth, not both")
+    if aftertouch_curve is not None and aftertouch_depth:
+        raise ValueError("Use aftertouch_curve or aftertouch_depth, not both")
     if not math.isfinite(rate_hz) or not 2 <= rate_hz <= 20:
         raise ValueError("Expression rate must be between 2 and 20 Hz")
 
@@ -125,40 +165,56 @@ def add_midi_expression(
             track_notes = notes
     if chosen_track is None:
         raise ValueError("No notes found on the selected MIDI channel")
-    if pitch_wander_cents == 0 and modulation_depth == 0 and aftertouch_depth == 0:
+    if pitch_wander_cents == 0 and modulation_depth == 0 and aftertouch_depth == 0 and not any((pitch_curve, modulation_curve, aftertouch_curve)):
         raise ValueError("Set at least one non-zero expression depth")
 
     intervals = [(tick_to_seconds(start), tick_to_seconds(end)) for start, end, _ in track_notes]
-    duration = max(end for _, end in intervals)
+    phrase_start = min(start for start, _ in intervals)
+    phrase_end = max(end for _, end in intervals)
+    duration = phrase_end - phrase_start
     rng = random.Random(seed)
     step = 1.0 / rate_hz
     smooth = 0.0
     events: list[tuple[int, int, mido.Message]] = []
-    point_count = int(math.ceil(duration / step)) + 1
-    for i in range(point_count):
-        when = min(i * step, duration)
-        active = any(start <= when < end for start, end in intervals)
+    sample_times = {min(i * step, duration) for i in range(int(math.ceil(duration / step)) + 1)}
+    for curve in (pitch_curve, modulation_curve, aftertouch_curve):
+        if curve:
+            sample_times.update(position * duration for position, _ in curve)
+    for when in sorted(sample_times):
+        absolute_when = phrase_start + when
+        active = any(start <= absolute_when < end for start, end in intervals)
         if not active:
             continue
         smooth = 0.72 * smooth + 0.28 * rng.uniform(-1.0, 1.0)
-        tick = seconds_to_tick(when)
-        if pitch_wander_cents:
+        tick = seconds_to_tick(phrase_start + when)
+        normalized = when / duration if duration else 0.0
+        if pitch_curve is not None:
+            cents = _curve_value(pitch_curve, normalized)
+            raw = int(round(cents / (pitch_bend_range_semitones * 100.0) * 8192))
+            events.append((tick, 1, mido.Message("pitchwheel", channel=channel, pitch=max(-8192, min(8191, raw)))))
+        elif pitch_wander_cents:
             cents = smooth * pitch_wander_cents
             raw = int(round(cents / (pitch_bend_range_semitones * 100.0) * 8192))
             events.append((tick, 1, mido.Message("pitchwheel", channel=channel, pitch=max(-8192, min(8191, raw)))))
-        if modulation_depth:
+        if modulation_curve is not None:
+            value = int(round(_curve_value(modulation_curve, normalized)))
+            events.append((tick, 2, mido.Message("control_change", channel=channel, control=1, value=max(0, min(127, value)))))
+        elif modulation_depth:
             value = int(round((smooth + 1.0) * 0.5 * modulation_depth))
             events.append((tick, 2, mido.Message("control_change", channel=channel, control=1, value=max(0, min(127, value)))))
-        if aftertouch_depth:
+        if aftertouch_curve is not None:
+            value = int(round(_curve_value(aftertouch_curve, normalized)))
+            events.append((tick, 3, mido.Message("aftertouch", channel=channel, value=max(0, min(127, value)))))
+        elif aftertouch_depth:
             value = int(round((smooth + 1.0) * 0.5 * aftertouch_depth))
-            events.append((tick, 3, mido.Message("aftertouch", channel=channel, value=max(0, min(127, value)))) )
+            events.append((tick, 3, mido.Message("aftertouch", channel=channel, value=max(0, min(127, value)))))
 
     def reset_expression(tick: int) -> None:
-        if pitch_wander_cents:
+        if pitch_curve is not None or pitch_wander_cents:
             events.append((tick, 0, mido.Message("pitchwheel", channel=channel, pitch=0)))
-        if modulation_depth:
+        if modulation_curve is not None or modulation_depth:
             events.append((tick, 0, mido.Message("control_change", channel=channel, control=1, value=0)))
-        if aftertouch_depth:
+        if aftertouch_curve is not None or aftertouch_depth:
             events.append((tick, 0, mido.Message("aftertouch", channel=channel, value=0)))
 
     # Clear expression at the edges of sounding regions so a following note
@@ -192,6 +248,7 @@ def add_midi_expression(
         "pitch_wander_cents_max": pitch_wander_cents,
         "pitch_bend_range_semitones_assumed": pitch_bend_range_semitones,
         "modulation_depth_max": modulation_depth, "aftertouch_depth_max": aftertouch_depth,
+        "pitch_curve": pitch_curve, "modulation_curve": modulation_curve, "aftertouch_curve": aftertouch_curve,
         "rate_hz": rate_hz, "seed": seed,
         "warning": "Pitch bend, CC1 and channel aftertouch affect all simultaneous notes on this MIDI channel; import and audition the new file before replacing anything.",
     }

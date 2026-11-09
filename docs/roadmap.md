@@ -4,6 +4,7 @@
 
 - Source MIDI를 보존하는 새 파일 생성
 - Bounded pitch bend, modulation CC1, channel aftertouch with explicit instrument pitch-bend range
+- Natural-language MIDI curve requests become interpolated expression events in the exported MIDI copy
 - Import into Cubase and audition manually; no project insertion or live MIDI event sending
 
 ## 0.3 Cubase 15 확장
