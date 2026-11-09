@@ -214,6 +214,8 @@ Codex는 자연어로 설명한 곡선을 MIDI 이벤트로 변환할 수 있습
 
 Codex MCP 예시:
 
+새 기능이 도구 목록에 없으면 프로젝트에서 `git pull --ff-only`와 `python -m pip install -e .`를 실행한 뒤 Codex를 재시작하세요. MCP 도구 목록에 `add_midi_expression`이 있어야 합니다.
+
 ```text
 source.mid를 expressive.mid로 복사해. MIDI Channel 1의 채널 애프터터치를
 처음 0, 25% 지점 15, 60% 지점 90, 80% 지점 90, 끝 0으로 그려줘.
@@ -236,7 +238,7 @@ source.mid를 expressive.mid로 복사해. MIDI Channel 1의 채널 애프터터
 
 곡선 위치는 첫 음부터 마지막 음까지의 구간을 0–1로 나타내며, 점 사이는 직선 보간합니다. 값 범위는 channel aftertouch와 CC1이 0–127, pitch bend가 -20–20 cents입니다. 현재 aftertouch는 채널 pressure이므로 같은 채널의 동시에 울리는 모든 음에 적용됩니다. polyphonic aftertouch나 노트별 독립 곡선은 지원하지 않습니다. 악기/프리셋이 해당 MIDI 메시지를 지원해야 소리가 달라집니다.
 
-기본값으로 실행하는 같은 CLI 명령:
+랜덤 피치벤드를 새 MIDI 파일에 추가하는 CLI 예:
 
 ```powershell
 cubasemixai midi-expression source.mid expressive.mid --pitch-wander-cents 6 --pitch-bend-range-semitones 2
