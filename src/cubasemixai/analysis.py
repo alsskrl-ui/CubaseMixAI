@@ -21,9 +21,12 @@ def db(value: float) -> float | None:
 
 
 def analyze(path: str, start: float = 0, end: float | None = None) -> dict:
+    source_hash = fingerprint(path)
     info = sf.info(path)
     if info.format not in {"WAV", "WAVEX", "RF64"}:
         raise ValueError("WAV input required")
+    if info.samplerate < 8000:
+        raise ValueError("Sample rate must be at least 8000 Hz")
     if info.channels not in (1, 2):
         raise ValueError("Only mono and stereo WAV are supported")
     if not math.isfinite(start) or start < 0 or (end is not None and (not math.isfinite(end) or end <= start)):
@@ -61,7 +64,9 @@ def analyze(path: str, start: float = 0, end: float | None = None) -> dict:
         mid = np.sqrt(np.mean(((left+right)/2)**2))
         side = np.sqrt(np.mean(((left-right)/2)**2))
         stereo["side_mid_db"] = db(float(side / mid)) if mid else None
-    return {"path": str(Path(path).resolve()), "sha256": fingerprint(path), "sample_rate": sr,
+    if fingerprint(path) != source_hash:
+        raise ValueError("WAV changed during analysis; finish rendering first")
+    return {"path": str(Path(path).resolve()), "sha256": source_hash, "sample_rate": sr,
             "channels": x.shape[1], "start": start, "end": stop / sr, "duration": len(x)/sr,
             "lufs_i": loudness if math.isfinite(loudness) else None,
             "rms_dbfs": db(rms), "sample_peak_dbfs": db(sample_peak),

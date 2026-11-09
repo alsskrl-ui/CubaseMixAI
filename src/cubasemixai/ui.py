@@ -26,16 +26,8 @@ def create_app(workflow: Workflow, token: str | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def home():
-        return '''<!doctype html><html lang="ko"><meta charset="utf-8"><title>CubaseMixAI 승인</title>
-<style>body{font:16px system-ui;max-width:1000px;margin:40px auto;background:#111827;color:#e5e7eb}input,button{padding:10px;margin:6px}pre{white-space:pre-wrap;background:#1f2937;padding:20px}article{border:1px solid #475569;padding:20px;margin:20px 0}</style>
-<h1>CubaseMixAI 로컬 승인</h1><p>Cubase 프로젝트를 백업하고 트랙·현재 값·포트를 직접 확인하세요. 승인은 15분 이내 한 번만 사용할 수 있습니다.</p>
-<input id="token" type="password" placeholder="터미널의 승인 토큰"><button id="refresh">내역 조회</button><p id="message"></p><main id="list"></main>
-<script>
-const token=document.querySelector('#token');
-async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:{'X-Review-Token':token.value,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok)throw Error(d.detail);return d;}
-async function refresh(){try{const data=await api('/history');const list=document.querySelector('#list');list.replaceChildren();for(const p of data){const box=document.createElement('article'),pre=document.createElement('pre');pre.textContent=JSON.stringify(p,null,2);box.append(pre);if(p.status==='pending'){const check=document.createElement('input');check.type='checkbox';box.append(check,document.createTextNode('백업 완료, 현재 값과 매핑 및 변경 내용을 직접 확인했습니다.'));for(const approve of [true,false]){const b=document.createElement('button');b.textContent=approve?'승인':'거절';b.onclick=async()=>{try{if(approve&&!check.checked)throw Error('직접 확인 후 체크하세요');await api('/decision/'+p.id,{approve,confirmed:check.checked});await refresh();}catch(e){document.querySelector('#message').textContent=e.message}};box.append(b)}}list.append(box)}}catch(e){document.querySelector('#message').textContent=e.message}}
-document.querySelector('#refresh').onclick=refresh;
-</script></html>'''
+        from importlib.resources import files
+        return files("cubasemixai").joinpath("dashboard.html").read_text(encoding="utf-8")
 
     @app.get("/history")
     def history(x_review_token: str | None = Header(default=None)):
@@ -54,5 +46,49 @@ document.querySelector('#refresh').onclick=refresh;
         try:
             return workflow.decide(ident, body.approve)
         except (ValueError, KeyError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+    class ApplyBody(BaseModel):
+        dry_run: bool = True
+        confirmed: bool = False
+
+    @app.post("/apply/{ident}")
+    def apply(ident: str, body: ApplyBody, x_review_token: str | None = Header(default=None)):
+        authorize(x_review_token)
+        if not body.dry_run and not body.confirmed:
+            raise HTTPException(400, "Confirm current Cubase values before live MIDI")
+        try:
+            return workflow.apply(ident, dry_run=body.dry_run)
+        except (ValueError, KeyError, OSError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/restore/{ident}")
+    def restore(ident: str, x_review_token: str | None = Header(default=None)):
+        authorize(x_review_token)
+        try:
+            return workflow.restore_proposal(ident)
+        except (ValueError, KeyError, OSError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/run/{operation}")
+    def run(operation: str, body: dict, x_review_token: str | None = Header(default=None)):
+        authorize(x_review_token)
+        from .analysis import compare, analyze_stems
+        from .engine import propose_reference
+        from .evaluation import compare_sections, evaluate_render, export_ab
+        from .backup import backup_project, verify_backup, restore_project
+        from .listening import clap_compare
+        from .calibration import calibration_report
+        from .mastering import master_chain
+        from .render import create_render_job, finish_render_job
+        functions = {f.__name__: f for f in (compare, analyze_stems, propose_reference, compare_sections,
+                     evaluate_render, export_ab, backup_project, verify_backup, restore_project, clap_compare,
+                     calibration_report, master_chain, create_render_job, finish_render_job)}
+        if operation not in functions:
+            raise HTTPException(404, "Unknown operation")
+        if operation in {"propose_reference", "create_render_job", "finish_render_job"}:
+            body["state_dir"] = str(workflow.root)
+        try:
+            return functions[operation](**body)
+        except (ValueError, KeyError, OSError, TypeError, ImportError, RuntimeError) as exc:
             raise HTTPException(400, str(exc)) from exc
     return app

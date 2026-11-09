@@ -1,23 +1,30 @@
 from mcp.server.fastmcp import FastMCP
 from .analysis import analyze, compare, analyze_stems
 from .proposals import recommend
+from .engine import integrate, propose_reference
+from .evaluation import evaluate_render, compare_sections, export_ab, export_report
+from .listening import clap_compare
+from .backup import backup_project, verify_backup, restore_project
+from .calibration import calibration_report
+from .mastering import master_chain
+from .render import create_render_job, finish_render_job
 from .workflow import Workflow
 
-server = FastMCP("CubaseMixAI")
-server.tool()(analyze)
-server.tool()(compare)
-server.tool()(analyze_stems)
-server.tool()(recommend)
+server = FastMCP('CubaseMixAI')
+for function in (analyze,compare,analyze_stems,recommend,integrate,propose_reference,evaluate_render,
+                 compare_sections,export_ab,export_report,clap_compare,backup_project,verify_backup,
+                 restore_project,calibration_report,master_chain,create_render_job,finish_render_job):
+    server.tool()(function)
 
 @server.tool()
 def propose(mapping_path: str, changes: list[dict], reason: str) -> dict:
     """Create a pending proposal. Approval requires the separate local review UI."""
-    return Workflow().create(mapping_path, changes, reason)
+    return Workflow().create(mapping_path,changes,reason)
 
 @server.tool()
 def apply(proposal_id: str, dry_run: bool = True) -> dict:
     """Preview or send a locally approved, unexpired, single-use proposal."""
-    return Workflow().apply(proposal_id, dry_run=dry_run)
+    return Workflow().apply(proposal_id,dry_run=dry_run)
 
 @server.tool()
 def history() -> list[dict]:
@@ -30,4 +37,4 @@ def restore(proposal_id: str) -> dict:
 
 
 def main():
-    server.run(transport="stdio")
+    server.run(transport='stdio')

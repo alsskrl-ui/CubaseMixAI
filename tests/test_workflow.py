@@ -73,3 +73,21 @@ def test_calibration_limits(setup):
     data=json.loads(mapping.read_text());data['controls']['vocal.volume']['verified']=False
     mapping.write_text(json.dumps(data))
     with pytest.raises(ValueError,match='not verified'): w.create(str(mapping),p['payload']['changes'],'bad')
+
+
+def test_expired_live_and_stale_rejection(setup):
+    w,p,_=setup
+    w.decide(p['id'],True)
+    with w.connect() as con: con.execute('UPDATE proposals SET created=0 WHERE id=?',(p['id'],))
+    with pytest.raises(ValueError,match='unexpired'): w.apply(p['id'],dry_run=False,sender=lambda *a:None)
+    with w.connect() as con: con.execute("UPDATE proposals SET status='pending' WHERE id=?",(p['id'],))
+    assert w.decide(p['id'],False)['status']=='rejected'
+
+
+def test_simulation_never_sends(setup):
+    w,p,mapping=setup
+    data=json.loads(mapping.read_text());data['simulation']=True;mapping.write_text(json.dumps(data))
+    p=w.create(str(mapping),p['payload']['changes'],'simulation')
+    w.decide(p['id'],True)
+    assert not w.apply(p['id'])['sent']
+    with pytest.raises(ValueError,match='Simulation'): w.apply(p['id'],dry_run=False,sender=lambda *a:None)

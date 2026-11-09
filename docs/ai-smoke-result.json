@@ -1,0 +1,61 @@
+{
+  "cosine_similarity": 1.0000000000000002,
+  "dimensions": {
+    "brightness": {
+      "mix_prompt_margin": 0.031063331931908685,
+      "reference_prompt_margin": 0.031063331931908685,
+      "mix_minus_reference": 0.0,
+      "window_spread": 0.0,
+      "confidence": "low",
+      "interpretation": "Prompt affinity, not a perceptual quality rating"
+    },
+    "punch": {
+      "mix_prompt_margin": -0.02235781489851575,
+      "reference_prompt_margin": -0.02235781489851575,
+      "mix_minus_reference": 0.0,
+      "window_spread": 0.0,
+      "confidence": "low",
+      "interpretation": "Prompt affinity, not a perceptual quality rating"
+    },
+    "space": {
+      "mix_prompt_margin": -0.06750512453234367,
+      "reference_prompt_margin": -0.06750512453234367,
+      "mix_minus_reference": 0.0,
+      "window_spread": 0.0,
+      "confidence": "low",
+      "interpretation": "Prompt affinity, not a perceptual quality rating"
+    }
+  },
+  "window_counts": {
+    "mix": 1,
+    "reference": 1
+  },
+  "confidence": "uncalibrated",
+  "prompts": {
+    "brightness": [
+      "The music has a dark and muffled timbre.",
+      "The music has a bright and clear timbre."
+    ],
+    "punch": [
+      "The music has soft and weak drum transients.",
+      "The music has punchy and impactful drum transients."
+    ],
+    "space": [
+      "The music sounds dry and close with little reverberation.",
+      "The music sounds spacious with audible reverberation."
+    ]
+  },
+  "limitations": [
+    "Prompt scores are not probabilities or quality ratings",
+    "Training bias, arrangement and window choice affect results",
+    "Human loudness-matched listening is required",
+    "CLAP uses the louder channel; use DSP metrics for stereo width"
+  ],
+  "model": "LAION CLAP / transformers",
+  "model_sha256": "abba8294f0c63d00eb3f8d998dacd16177cc5860cad3a11618e7f361a75587fe",
+  "inputs": {
+    "mix_sha256": "c0d2beefab227e8cf6edde11c01cde54c8f8ccd7006883e279bc94343a1fccd5",
+    "reference_sha256": "76e8d11778c7c26bb617117dbea0d9b6e78f344f3cc529ed2425dcd5ac7f862c"
+  },
+  "validation": "real model + synthetic gain-paired audio; not human perceptual validation"
+}

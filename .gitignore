@@ -8,3 +8,9 @@ __pycache__/
 *.bak
 *.pt
 .env
+
+config/*.local.json
+*.local.json
+build/
+dist/
+*.whl

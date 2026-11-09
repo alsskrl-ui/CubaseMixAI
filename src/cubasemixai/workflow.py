@@ -1,5 +1,6 @@
 """Persistent, single-use approval state machine. MIDI has no readback/rollback ACK."""
 import json
+import os
 import sqlite3
 import time
 import uuid
@@ -8,8 +9,8 @@ from .control import load_mapping, validate_change, send_cc
 
 
 class Workflow:
-    def __init__(self, directory: str = ".cubasemixai"):
-        self.root = Path(directory)
+    def __init__(self, directory: str | None = None):
+        self.root = Path(directory or os.environ.get("CUBASEMIXAI_STATE_DIR", ".cubasemixai")).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self.db = self.root / "history.sqlite3"
         with self.connect() as con:
@@ -18,7 +19,7 @@ class Workflow:
     def connect(self):
         return sqlite3.connect(self.db, timeout=15)
 
-    def create(self, mapping_path: str, changes: list[dict], reason: str) -> dict:
+    def create(self, mapping_path: str, changes: list[dict], reason: str, evidence: dict | None = None) -> dict:
         mapping, digest = load_mapping(mapping_path)
         if not changes or len(changes) > 32 or not reason.strip():
             raise ValueError("Need 1–32 changes and a reason")
@@ -31,10 +32,18 @@ class Workflow:
         payload = {"mapping_path": str(Path(mapping_path).resolve()), "mapping_sha256": digest,
                    "changes": clean, "reason": reason,
                    "risk": "MIDI has no acknowledgement; current values are user-supplied. Back up Cubase before applying."}
+        payload["evidence"] = evidence
+        self._check_sources(payload)
         ident = uuid.uuid4().hex
         with self.connect() as con:
             con.execute("INSERT INTO proposals VALUES (?, ?, 'pending', ?, NULL)", (ident, time.time(), json.dumps(payload, allow_nan=False)))
         return self.get(ident)
+
+    def _check_sources(self, payload):
+        from .analysis import fingerprint
+        for source in (payload.get("evidence") or {}).get("source_files", []):
+            if fingerprint(source["path"]) != source["sha256"]:
+                raise ValueError("Source WAV changed; create a new proposal")
 
     def get(self, ident: str) -> dict:
         with self.connect() as con:
@@ -53,24 +62,31 @@ class Workflow:
         with self.connect() as con:
             con.execute("BEGIN IMMEDIATE")
             p = self.get(ident)
-            if p["status"] != "pending" or time.time()-p["created"] > 900:
-                raise ValueError("Proposal is not pending or has expired (15 min)")
-            mapping, digest = load_mapping(p["payload"]["mapping_path"])
-            if digest != p["payload"]["mapping_sha256"]:
-                raise ValueError("Mapping changed; create a new proposal")
-            for c in p["payload"]["changes"]:
-                validate_change(mapping, c)
+            if p["status"] != "pending":
+                raise ValueError("Proposal is not pending")
+            if approve:
+                if time.time()-p["created"] > 900:
+                    raise ValueError("Proposal has expired (15 min)")
+                self._check_sources(p["payload"])
+                mapping, digest = load_mapping(p["payload"]["mapping_path"])
+                if digest != p["payload"]["mapping_sha256"]:
+                    raise ValueError("Mapping changed; create a new proposal")
+                for c in p["payload"]["changes"]:
+                    validate_change(mapping, c)
             con.execute("UPDATE proposals SET status=? WHERE id=?", ("approved" if approve else "rejected", ident))
         return self.get(ident)
 
     def apply(self, ident: str, *, dry_run: bool = True, sender=None) -> dict:
         p = self.get(ident)
+        self._check_sources(p["payload"])
         mapping, digest = load_mapping(p["payload"]["mapping_path"])
         if digest != p["payload"]["mapping_sha256"]:
             raise ValueError("Mapping changed; create a new proposal")
         messages = [validate_change(mapping, c) for c in p["payload"]["changes"]]
         if dry_run:
             return {"dry_run": True, "messages": messages, "sent": False}
+        if mapping.get("simulation"):
+            raise ValueError("Simulation mapping cannot send live MIDI")
         with self.connect() as con:
             con.execute("BEGIN IMMEDIATE")
             current = con.execute("SELECT status, created FROM proposals WHERE id=?", (ident,)).fetchone()

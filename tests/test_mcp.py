@@ -12,7 +12,9 @@ def test_stdio_tools():
                 await session.initialize()
                 result = await session.list_tools()
                 names = {t.name for t in result.tools}
-                assert names == {'analyze','compare','analyze_stems','recommend','propose','apply','history','restore'}
+                assert {'analyze','compare','analyze_stems','recommend','propose','apply','history','restore','propose_reference','clap_compare','backup_project','finish_render_job'} <= names
+                assert not {'approve','decide','send_cc'} & names
+                assert len(names)==22
                 # A rejected live request must never reach MIDI hardware.
                 response = await session.call_tool('apply', {'proposal_id':'missing','dry_run':False})
                 assert response.isError
