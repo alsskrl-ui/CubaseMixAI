@@ -36,7 +36,7 @@ def test_sections_and_html(wavs,tmp_path):
     assert 'chorus' in result
     with pytest.raises(ValueError): compare_sections(a,b,sections*2)
     out=tmp_path/'report.html';export_report({'evil':'<script>alert(1)</script>'},str(out))
-    assert '<script>' not in out.read_text()
+    assert '<script>' not in out.read_text(encoding='utf-8')
     with pytest.raises(FileExistsError): export_report({},str(out))
 
 
