@@ -14,6 +14,12 @@ def remote_tracks() -> dict:
         return host.request('tracks',{})
 
 
+def remote_channel_fader(target: dict) -> dict:
+    """Read only the identified mixer channel's volume, including its Cubase display value."""
+    with RemoteClient() as host:
+        return host.request('channel_fader', {'target': target})
+
+
 def remote_inspect(target: dict, object_id: int | None = None, parameter_offset: int = 0) -> dict:
     """Inspect a track or descendant object; enumerate physical units/parameters/children."""
     with RemoteClient() as host:

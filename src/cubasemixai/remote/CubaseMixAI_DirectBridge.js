@@ -45,8 +45,16 @@ function children(id) {
 function channels() {
     refresh();
     var all=children(da.getBaseObjectID(mapping)), i;
-    for (i=0;i<all.length;i++) all[i].session=session;
-    return all;
+    var seen={}, result=[];
+    for (i=0;i<all.length;i++) {
+        var channel=all[i];
+        channel.session=session;
+        var previous=seen[channel.object_id];
+        if (previous && sameObject(previous,channel)) continue;
+        seen[channel.object_id]=channel;
+        result.push(channel);
+    }
+    return result;
 }
 function target(expected) {
     if (!expected || expected.session!==session || !expected.unique_id) fail('STALE_TARGET_SESSION');
@@ -69,14 +77,18 @@ function scoped(expected,id) {
     }
     fail('OBJECT_OUTSIDE_TARGET_OR_SCAN_LIMIT');
 }
-function parameter(id,tag) {
+function parameter(id,tag,allowUnreadable) {
     if (!integer(tag)) fail('INVALID_PARAMETER_TAG');
     var count=da.getNumberOfParameters(mapping,id), found=false, i;
     if (count>8192) fail('PARAMETER_SCAN_LIMIT');
     for (i=0;i<count;i++) if (da.getParameterTagByIndex(mapping,id,i)===tag) { found=true; break; }
     if (!found) fail('PARAMETER_NOT_FOUND');
     var value=da.getParameterProcessValue(mapping,id,tag);
-    if (!finite(value) || value<0 || value>1) fail('INVALID_HOST_VALUE');
+    if (!finite(value) || value<0 || value>1) {
+        if (!allowUnreadable) fail('INVALID_HOST_VALUE');
+        return {tag:tag, title:da.getParameterTitle(mapping,id,tag,128), normalized:null,
+            plain:null, unit:optional('getParameterDisplayUnits',[mapping,id,tag]), error:'INVALID_HOST_VALUE'};
+    }
     var args=[mapping,id,tag];
     var plain=optional('convertParameterProcessValueToPlain',args.concat([value]));
     return {tag:tag, title:da.getParameterTitle(mapping,id,tag,128), normalized:value,
@@ -85,12 +97,26 @@ function parameter(id,tag) {
         value_type:optional('getParameterProcessValueType',args),
         edit_locked:optional('getParameterEditLockState',args), automatable:optional('isParameterAutomatable',args)};
 }
+function channelFader(args) {
+    var channel=target(args.target), id=channel.object_id;
+    var count=da.getNumberOfParameters(mapping,id), match=null;
+    if (count>8192) fail('PARAMETER_SCAN_LIMIT');
+    for (var i=0;i<count;i++) {
+        var tag=da.getParameterTagByIndex(mapping,id,i);
+        var title=da.getParameterTitle(mapping,id,tag,128);
+        if (!/^(volume|channel volume|fader volume)$/i.test(title)) continue;
+        if (match!==null) fail('CHANNEL_FADER_AMBIGUOUS');
+        match=tag;
+    }
+    if (match===null) fail('CHANNEL_FADER_NOT_FOUND');
+    return {target:channel, parameter:parameter(id,match)};
+}
 function inspect(args) {
     var loc=scoped(args.target,args.object_id), id=loc.object.object_id;
     var offset=args.parameter_offset===undefined?0:args.parameter_offset;
     if (!integer(offset)) fail('INVALID_OFFSET');
     var count=da.getNumberOfParameters(mapping,id), items=[], i;
-    for (i=offset;i<Math.min(count,offset+64);i++) items.push(parameter(id,da.getParameterTagByIndex(mapping,id,i)));
+    for (i=offset;i<Math.min(count,offset+64);i++) items.push(parameter(id,da.getParameterTagByIndex(mapping,id,i),true));
     return {target:loc.target, object:loc.object, children:children(id), parameters:items,
         parameter_total:count, next_offset:offset+64<count?offset+64:null};
 }
@@ -105,8 +131,12 @@ function preview(args) {
         normalized=args.after;
         plain=optional('convertParameterProcessValueToPlain',[mapping,loc.object.object_id,args.parameter_tag,normalized]);
         if (!finite(plain)) plain=null;
-    } else if (kind==='plain') {
-        if (args.max_delta>3 || !finite(before.plain) || !args.unit || args.unit!==before.unit || Math.abs(args.after-before.plain)>args.max_delta) fail('PLAIN_UNIT_OR_DELTA_UNAVAILABLE');
+    } else if (kind==='plain' || kind==='channel_db') {
+        if (kind==='channel_db') {
+            if (loc.target.object_id!==loc.object.object_id || /^OutputChannel/.test(loc.target.unique_name) ||
+                before.unit!=='dB' || channelFader(args).parameter.tag!==before.tag) fail('CHANNEL_VOLUME_REQUIRED');
+        }
+        if (args.max_delta>(kind==='channel_db'?24:3) || !finite(before.plain) || !args.unit || args.unit!==before.unit || Math.abs(args.after-before.plain)>args.max_delta) fail('PLAIN_UNIT_OR_DELTA_UNAVAILABLE');
         if (!da.convertParameterPlainToProcessValue || !da.convertParameterProcessValueToPlain) fail('API_1_3_CONVERSION_UNAVAILABLE');
         normalized=da.convertParameterPlainToProcessValue(mapping,loc.object.object_id,args.parameter_tag,args.after);
         if (!finite(normalized) || normalized<0 || normalized>1) fail('PLAIN_OUTSIDE_RANGE');
@@ -160,6 +190,17 @@ function pluginPlan(args) {
     if (!found) fail('PLUGIN_NOT_IN_ACTIVE_CATALOG');
     return {kind:'plugin',target:loc.target,object:loc.object,plugin:found,request:args};
 }
+var audioCommands={}, queuedAudio=null;
+function bindAudioCommand(key,category,name) {
+    var trigger=driver.mSurface.makeCustomValueVariable(key);
+    page.makeCommandBinding(trigger,category,name);
+    audioCommands[key]=trigger;
+}
+if (driver.mSurface && page.makeCommandBinding) {
+    bindAudioCommand('render_selection','Render in Place','Render');
+    bindAudioCommand('export_mix','File','Export Audio Mixdown');
+    bindAudioCommand('import_audio','File','Import Audio File');
+}
 function dispatch(op,args) {
     if (op==='hello') {
         var version=api.mDefaults && api.mDefaults.mAppVersion;
@@ -167,7 +208,14 @@ function dispatch(op,args) {
             capabilities:{direct_access:!!da,physical_conversion:!!(da&&da.convertParameterPlainToProcessValue),
             plugin_manager:!!(da&&da.mPluginManager&&da.mPluginManager.trySetSlotPlugin)}};
     }
+    if (op==='audio_command') {
+        if (!Object.prototype.hasOwnProperty.call(audioCommands,args.action)) fail('AUDIO_COMMAND_UNAVAILABLE');
+        if (queuedAudio) fail('AUDIO_COMMAND_BUSY');
+        queuedAudio=audioCommands[args.action];
+        return {action:args.action,status:'queued_in_cubase'};
+    }
     if (op==='tracks') return {tracks:channels()};
+    if (op==='channel_fader') return channelFader(args);
     if (op==='inspect') return inspect(args);
     if (op==='preview') return {plan:preview(args)};
     if (op==='check') return {plan:checked(args.plan)};
@@ -245,6 +293,12 @@ input.mOnSysex=function(activeDevice,message) {
 };
 page.mOnIdle=function(activeDevice) {
     var i;for(i=0;i<16 && outgoing.length;i++)output.sendMidi(activeDevice,outgoing.shift());
+    if (!outgoing.length && queuedAudio) {
+        var trigger=queuedAudio;
+        queuedAudio=null;
+        trigger.setProcessValue(activeDevice,1);
+        trigger.setProcessValue(activeDevice,0);
+    }
 };
 page.mOnActivate=function(activeDevice,activeMapping) {
     device=activeDevice;mapping=activeMapping;session=epoch();chunks={};outgoing=[];mutations={};mutationCount=0;
@@ -252,5 +306,5 @@ page.mOnActivate=function(activeDevice,activeMapping) {
 };
 page.mOnDeactivate=function(activeDevice,activeMapping) {
     if(da)da.deactivate(activeMapping);
-    mapping=null;device=null;session=epoch();chunks={};outgoing=[];mutations={};
+    queuedAudio=null;mapping=null;device=null;session=epoch();chunks={};outgoing=[];mutations={};
 };

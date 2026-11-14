@@ -121,6 +121,12 @@ class RemoteWorkflow:
                     if matched:break
                     time.sleep(.05)
                 else:raise ValueError('Postcondition not observed; outcome is uncertain, never resend automatically')
+                if plan['kind']=='plugin':
+                    from .operations import _map_object
+                    try:
+                        observed['parameter_map']=_map_object(host,plan['target'],observed['children'][0])
+                    except (RuntimeError, ValueError, KeyError) as exc:
+                        observed['parameter_map_error']=str(exc)
                 p['payload']['receipt']={'dispatch':receipt,'observed':observed}
                 with self.w.connect() as con:
                     con.execute("UPDATE proposals SET status='verified', payload=? WHERE id=?",(json.dumps(p['payload'],ensure_ascii=False,allow_nan=False),ident))
@@ -186,7 +192,7 @@ class RemoteWorkflow:
                     old=receipt['plan'];observed=host.request('read',{'plan':old})['parameter']
                     if abs(observed['normalized']-old['after_normalized'])>.00001:
                         raise ValueError('A batch fader changed after apply; inspect current values before restoring')
-                    args=dict(old['request']);args['after']=old['before']['plain']
+                    args=dict(old['request']);args['after']=old['before']['normalized' if args['value_kind']=='normalized' else 'plain']
                     result=host.request('preview',args)['plan']
                     reverse.append(result)
             return self._store_batch(reverse,'Restore verified reference-volume batch '+ident,

@@ -8,9 +8,10 @@ function fixture(api13=true) {
  const p=(id,tag)=>{if(!params[id]||!params[id][tag])throw Error('unknown parameter');return params[id][tag]};
  const da={activate(){},deactivate(){},update(){},getBaseObjectID:()=>0,getNumberOfChildObjects:(m,id)=>nodes[id].children.length,getChildObjectID:(m,id,i)=>nodes[id].children[i],getObjectUniqueIDString:(m,id)=>nodes[id].uid,getObjectUniqueName:(m,id)=>nodes[id].name,getObjectTitle:(m,id)=>nodes[id].title,getNumberOfParameters:(m,id)=>Object.keys(params[id]||{}).length,getParameterTagByIndex:(m,id,i)=>Number(Object.keys(params[id]||{})[i]),getParameterProcessValue:(m,id,t)=>p(id,t).value,getParameterDisplayValue:(m,id,t)=>(p(id,t).value*60-60).toFixed(2)+' dB',getParameterTitle:(m,id,t)=>p(id,t).title,getParameterDisplayUnits:(m,id,t)=>p(id,t).unit,getParameterEditLockState:(m,id,t)=>!!p(id,t).locked,setParameterEditLockState:(m,id,t,s)=>{p(id,t).locked=s},setParameterProcessValue:(m,id,t,value)=>{writes++;p(id,t).value=value}};
  if(api13){da.convertParameterPlainToProcessValue=(m,id,t,v)=>(v+60)/60;da.convertParameterProcessValueToPlain=(m,id,t,v)=>v*60-60;da.getParameterProcessValueType=()=> 'float';da.isParameterAutomatable=()=>true;da.mPluginManager={getNumberOfPluginCollections:()=>1,getIndexOfActivePluginCollection:()=>0,getIndexOfDefaultPluginCollection:()=>0,getPluginCollectionByIndex:()=>({mEntries:[{mPluginUID:'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',mPluginName:'Test EQ',mPluginVendor:'Mock',mPluginVersion:'1'}]}),trySetSlotPlugin:(m,id,uid)=>{pluginWrites++;if(nodes[id].children.length)throw Error('not empty');nodes[99]={uid:'new-plugin',name:uid+'-1',title:'Test EQ',children:[]};nodes[id].children=[99];return true}}}
+ const commands=[];
  const input={},output={sendMidi:(d,data)=>outgoing.push(data)};
- const page={mHostAccess:{mMixConsole:{makeMixerBankZone:()=>({})},makeDirectAccess:()=>da}};
- const driver={mPorts:{makeMidiInput:()=>input,makeMidiOutput:()=>output},makeDetectionUnit:()=>({detectPortPair:()=>({expectInputNameEquals(){},expectOutputNameEquals(){}})}),mMapping:{makePage:()=>page}};
+ const page={makeCommandBinding(trigger,category,name){trigger.command=[category,name]},mHostAccess:{mMixConsole:{makeMixerBankZone:()=>({})},makeDirectAccess:()=>da}};
+ const driver={mSurface:{makeCustomValueVariable(){return {setProcessValue(device,v){if(v===1)commands.push(this.command)}}}},mPorts:{makeMidiInput:()=>input,makeMidiOutput:()=>output},makeDetectionUnit:()=>({detectPortPair:()=>({expectInputNameEquals(){},expectOutputNameEquals(){}})}),mMapping:{makePage:()=>page}};
  const context={require:name=>{assert.equal(name,'midiremote_api_v1');return {makeDeviceDriver:()=>driver,mDefaults:{mAppVersion:{getVersionString:()=>api13?'15.0.30':'15.0.10'}}}},console};
  vm.runInNewContext(fs.readFileSync(driverFile,'utf8'),context,{filename:driverFile});
  page.mOnActivate({},{});
@@ -26,7 +27,7 @@ function fixture(api13=true) {
   assert.equal(reply.id,id);return reply;
  }
  const hello=request('hello').result;
- return {request:(op,args,id)=>request(op,args,hello.session,id),raw:request,hello,nodes,params,page,get writes(){return writes},get pluginWrites(){return pluginWrites},wire(data){input.mOnSysex({},data);for(let i=0;i<200;i++)page.mOnIdle({});return outgoing.splice(0)}};
+ return {request:(op,args,id)=>request(op,args,hello.session,id),raw:request,hello,nodes,params,page,commands,get writes(){return writes},get pluginWrites(){return pluginWrites},wire(data){input.mOnSysex({},data);for(let i=0;i<200;i++)page.mOnIdle({});return outgoing.splice(0)}};
 }
 if(process.argv[3]==='--wire') {
  const bridge=fixture();
@@ -35,7 +36,22 @@ if(process.argv[3]==='--wire') {
 } else {
 let f=fixture();
 assert(f.hello.capabilities.physical_conversion);
+assert(f.request('audio_command',{action:'render_selection'}).ok);
+assert.deepEqual(f.commands,[['Render in Place','Render']]);
+assert(!f.request('audio_command',{action:'unknown'}).ok);
+f.nodes[0].children.push(10);
+const channels=f.request('tracks').result.tracks;
+assert.equal(channels.length,2);
+f.params[10][2]={value:-1,title:'Other',unit:''};
+assert.equal(f.request('channel_fader',{target:channels[0]}).result.parameter.plain,-12);
+assert.equal(f.request('inspect',{target:channels[0]}).result.parameters[1].error,'INVALID_HOST_VALUE');
+f.nodes[20].uid=f.nodes[10].uid;
+assert(!f.request('channel_fader',{target:channels[0]}).ok);
+f=fixture();
 let t=f.request('tracks').result.tracks.find(x=>x.title==='Kick');
+let large=f.request('preview',{target:t,object_id:10,parameter_tag:1,after:-17,value_kind:'channel_db',unit:'dB',max_delta:5});
+assert(large.ok);assert.equal(large.result.plan.after_plain,-17);
+assert(!f.request('preview',{target:t,object_id:15,parameter_tag:100,after:-35,value_kind:'channel_db',unit:'dB',max_delta:5}).ok);
 let inspected=f.request('inspect',{target:t,object_id:10}).result;
 assert.equal(inspected.parameters[0].unit,'dB');assert.equal(inspected.parameters[0].plain,-12);
 let plan=f.request('preview',{target:t,object_id:10,parameter_tag:1,after:-13,value_kind:'plain',unit:'dB',max_delta:1}).result.plan;

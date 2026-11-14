@@ -3,7 +3,7 @@
 <h1>CubaseMixAI</h1><p>분석 → 제안 → 직접 검토·승인 → 적용 → 재렌더 비교</p>
 <section><label for="token">로컬 실행 터미널에 표시된 승인 토큰</label><input id="token" type="password" autocomplete="off"><p class="muted">토큰은 브라우저 메모리에만 유지됩니다. 프로젝트를 별도 폴더로 백업하고 현재 Cubase 값과 매핑을 직접 확인하세요.</p></section>
 <section><h2>분석 및 작업</h2><label for="operation">수행할 작업</label><select id="operation"></select><form id="form"><div id="fields"></div><button id="run">실행</button></form><p id="message" role="status"></p><details open><summary>작업 결과</summary><pre id="result">로컬 파일 경로를 입력하세요. WAV나 프로젝트는 서버로 업로드되지 않습니다.</pre></details><button id="download">결과 JSON 저장</button></section>
-<section><div class="row"><h2>변경안 검토와 적용</h2><button id="refresh">목록 새로고침</button></div><p>승인 시 원본 백업·트랙·현재 값·목표 값을 확인하세요. 생성 후 15분 동안 유효하며 실제 전송은 한 번만 가능합니다.</p><main id="list"></main></section>
+<section><div class="row"><h2>변경안 검토와 적용</h2><button id="auto" aria-pressed="false">Auto 켜기</button><button id="refresh">목록 새로고침</button></div><p>Auto를 켜면 이 탭이 열려 있는 동안 새로 생성된 변경안을 순서대로 적용합니다. 기존 변경안은 승인 및 적용을 누르세요.</p><main id="list"></main></section>
 <script>
 const token=document.querySelector('#token'),message=document.querySelector('#message'),result=document.querySelector('#result');
 const definitions={
@@ -35,9 +35,54 @@ let lastResult=null;function show(data){lastResult=data;result.textContent=JSON.
 document.querySelector('#form').onsubmit=async e=>{e.preventDefault();const b=document.querySelector('#run');b.disabled=true;message.textContent='처리 중…';try{const body={};for(const i of document.querySelectorAll('#fields input,#fields textarea'))body[i.dataset.key]=i.dataset.type==='json'?JSON.parse(i.value):i.dataset.type==='number'?Number(i.value):i.value;show(await api('/run/'+select.value,body));message.textContent='완료. 결과의 제한 사항과 다음 작업을 확인하세요.';await refresh()}catch(e){message.textContent=e.message}finally{b.disabled=false}};
 document.querySelector('#download').onclick=()=>{if(!lastResult)return;const url=URL.createObjectURL(new Blob([JSON.stringify(lastResult,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='cubasemixai-report.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 async function refresh(){try{const data=await api('/history');const list=document.querySelector('#list');list.replaceChildren();for(const p of data){const box=document.createElement('article'),title=document.createElement('h3'),pre=document.createElement('pre');title.textContent=p.id+' · '+p.status;pre.textContent=JSON.stringify(p.payload,null,2);box.append(title,pre);const button=(label,fn,danger=false)=>{const b=document.createElement('button');b.textContent=label;if(danger)b.className='danger';b.onclick=async()=>{b.disabled=true;try{show(await fn());await refresh()}catch(e){message.textContent=e.message;b.disabled=false}};box.append(b)};
-if(p.status==='pending'){const check=document.createElement('input');check.type='checkbox';const l=document.createElement('label');l.append(check,document.createTextNode('백업 완료, 현재 값과 매핑 및 변경 내용을 직접 확인했습니다.'));box.append(l);button('승인',()=>{if(!check.checked)throw Error('직접 확인 후 체크하세요');return api('/decision/'+p.id,{approve:true,confirmed:true})});button('거절',()=>api('/decision/'+p.id,{approve:false}))}
+if(p.status==='pending'){
+    button('승인 및 적용',()=>approveAndApply(p.id),true);
+    button('거절',()=>api('/decision/'+p.id,{approve:false}));
+}
 button('MIDI 미리보기',()=>api('/apply/'+p.id,{dry_run:true}));
-if(p.status==='approved')button('승인된 변경 실제 전송',()=>{if(!confirm('테스트 프로젝트가 열려 있고 현재 값이 그대로인가요? 실제 MIDI를 한 번 전송합니다.'))throw Error('전송 취소');return api('/apply/'+p.id,{dry_run:false,confirmed:true})},true);
+if(p.status==='approved')button('적용',()=>api('/apply/'+p.id,{dry_run:false,confirmed:true}),true);
 if(['sent','uncertain','sending','verified'].includes(p.status)&&p.payload.kind!=='plugin')button('복원 변경안 생성 (재승인 필요)',()=>api('/restore/'+p.id,{}));list.append(box)}}catch(e){message.textContent=e.message}}
+async function approveAndApply(id){
+    await api('/decision/'+id,{approve:true,confirmed:true});
+    return api('/apply/'+id,{dry_run:false,confirmed:true});
+}
+const autoButton=document.querySelector('#auto');
+let generation=0;
+function stopAuto(){
+    generation++;
+    autoButton.setAttribute('aria-pressed','false');
+    autoButton.textContent='Auto 켜기';
+}
+autoButton.onclick=async()=>{
+    if(autoButton.getAttribute('aria-pressed')==='true'){stopAuto();return}
+    autoButton.disabled=true;
+    try{
+        const {since}=await api('/auto/start',{});
+        const run=++generation;
+        autoButton.setAttribute('aria-pressed','true');
+        autoButton.textContent='Auto 끄기';
+        const attempted=new Set();
+        async function poll(){
+            if(run!==generation)return;
+            try{
+                const pending=await api('/auto/pending?since='+encodeURIComponent(since));
+                for(const id of pending){
+                    if(run!==generation)return;
+                    if(attempted.has(id))continue;
+                    attempted.add(id);
+                    show(await approveAndApply(id));
+                    message.textContent='자동 적용 완료';
+                    await refresh();
+                }
+                if(run===generation)setTimeout(poll,1000);
+            }catch(e){
+                if(run===generation){stopAuto();message.textContent='자동 적용 중지 · '+e.message;await refresh()}
+            }
+        }
+        poll();
+    }catch(e){message.textContent=e.message}
+    finally{autoButton.disabled=false}
+};
+token.addEventListener('input',stopAuto);
 document.querySelector('#refresh').onclick=refresh;
 </script></html>
