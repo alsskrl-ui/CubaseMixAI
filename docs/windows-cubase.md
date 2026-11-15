@@ -13,7 +13,7 @@
 
 ## 2. Generic Remote
 
-처음 연결한다면 [README의 킥 Volume 화면별 가이드](../README.md#kick-volume)를 따라 위·아래 표를 각각 설정하세요. CC21 수동 테스트, 실측 dB 등록, Codex 요청 예시까지 포함되어 있습니다.
+Cubase 10.5의 Generic Remote를 사용하는 기존 연결 경로입니다. 처음 설정한다면 아래 절차를 테스트 프로젝트 복사본에서 진행하세요.
 
 1. Cubase Studio Setup(스튜디오 설정)에서 Generic Remote를 추가합니다. Cubase 10.5의 Generic Remote이며 Cubase 12 이후 MIDI Remote API가 아닙니다.
 2. MIDI Input을 `CubaseMixAI`, MIDI Output은 필요하지 않으면 Not Connected로 설정합니다. MIDI Port Setup에서 이 포트가 연주용 All MIDI Inputs로 섞이지 않게 합니다.
@@ -27,7 +27,6 @@
 
 ## 3. EQ / compressor
 
-[README의 Track Quick Controls 상세 가이드](../README.md#kick-quick-controls)를 따릅니다.
 
 1. Kick 트랙의 Inspector Quick Controls 슬롯에 실제 compressor threshold/ratio/attack/release와 EQ gain을 할당합니다.
 2. Studio Setup의 **Track Quick Controls** 장치에서 loopMIDI 입력과 슬롯별 CC30–34 수신을 설정합니다. **VST Quick Controls**와 구분합니다.
