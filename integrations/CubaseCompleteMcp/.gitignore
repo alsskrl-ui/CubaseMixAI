@@ -1,0 +1,24 @@
+bin/
+obj/
+.vs/
+.idea/
+.vscode/
+TestResults/
+test-results/
+artifacts/
+coverage/
+*.user
+*.suo
+*.nupkg
+*.snupkg
+*.log
+.DS_Store
+Thumbs.db
+
+# Local Cubase state and generated installation payloads
+.local/
+backups/
+installed/
+*.cpr
+*.bak
+

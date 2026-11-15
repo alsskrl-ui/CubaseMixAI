@@ -4,6 +4,8 @@ CubaseMixAI 0.4에서는 기존 CC 외에 **MIDI Remote DirectAccess**와 별도
 
 실제 Cubase 15에서의 드라이버 로드·대상/값·플러그인 지원은 아직 사용자 환경에서 검증해야 합니다. 처음에는 작업 복사본에서 킥 볼륨 하나로 확인하세요. 기존 DSP/CLAP·백업·MCP 등록은 README 절차를 그대로 사용합니다.
 
+더 넓은 프로젝트·transport·MIDI import·Cubase WAV export 제어는 별도 MIT 서버인 [Cubase Complete MCP와 함께 사용](cubase-integration.md)하도록 통합했습니다. 두 서버 등록과 별도 loopMIDI 포트가 필요합니다.
+
 ## 빠른 요약
 
 Cubase 15에서는 MIDI Remote API가 노출한 믹서 객체를 읽고, 승인된 파라미터 변경을 적용한 다음 실제 값을 다시 읽을 수 있습니다. API 1.3 plugin manager가 있으면 설치 플러그인 목록 조회와 빈 Insert 슬롯 삽입도 가능합니다.
@@ -15,10 +17,37 @@ Cubase 15에서는 MIDI Remote API가 노출한 믹서 객체를 읽고, 승인�
 | “이 빈 Insert 슬롯에 내가 고른 플러그인을 넣는 안을 만들어.” | 지원 API에서 catalog 확인 후 빈 슬롯 대상 제안을 만듦 |
 | “애프터터치를 처음엔 0, 중간엔 80으로 올렸다 끝에서 0으로 내려줘.” | MIDI 전체 구간에 맞춘 채널 애프터터치 곡선을 새 MIDI 파일에 작성 |
 | “믹스와 레퍼런스 WAV 차이를 분석해줘.” | Cubase에서 내보낸 파일을 DSP/선택적 CLAP으로 분석 |
+| “정리한 세션 폴더와 현재 Cubase 상태를 읽어줘.” | `remote_agent_context`가 manifest, 분석 JSON, WAV/스템 쌍과 live track fader를 합친 작업 컨텍스트를 반환 |
 
 **사용 흐름:** 두 loopMIDI 포트 생성 → MIDI Remote 드라이버 설치·로드 → `remote-status` 확인 → Codex MCP에서 조회·제안 → 로컬 UI에서 직접 승인 → 적용·값 재확인 → Cubase에서 새 WAV를 내보내 청취.
 
 현재 제어 범위는 호스트가 실제로 노출한 트랙/파라미터이며, 플러그인 삽입은 지원 API가 있고 슬롯이 비어 있을 때만 가능합니다. WAV 자동 렌더링, 기존 플러그인 교체·삭제, 최종 음질 판단은 수동입니다. `verified`는 Cubase 값 확인을 뜻하며 소리의 개선을 뜻하지 않습니다. 아래 절은 설치와 각 단계의 세부 절차입니다.
+
+## 에이전트형 작업 폴더와 live 세션 읽기
+
+Codex MCP에 `remote_agent_context(session_dir)`를 호출하면 작업 폴더의 분석 파일과 Cubase API 상태를 한 번에 읽습니다. 기본 자동 검색 구조는 다음과 같습니다.
+
+```text
+C:/CubaseMixAI/session/
+  cubasemixai-session.json       # 선택: 별도 경로와 Cubase unique_id 연결
+  reference.wav                  # 선택: 완성 레퍼런스 믹스
+  mix.wav                        # 선택: 현재 전체 믹스
+  analysis/*.json                # 선택: 기존 분석 결과
+  stems/mix/kick.wav             # 선택: 현재 역할별 스템
+  stems/reference/kick.wav       # 같은 파일명일 때 비교 쌍으로 읽음
+```
+
+예시 manifest는 [config/agent-session.example.json](../config/agent-session.example.json)입니다. `reference_wav`, `mix_wav`, `analysis_dir`, `mix_stems_dir`, `reference_stems_dir`는 manifest 위치 기준 상대 경로 또는 절대 경로를 받습니다. `track_map`은 역할 이름을 `remote_tracks`에서 읽은 정확한 `unique_id`에 연결합니다. Cubase 트랙 이름과 WAV 파일명은 자동으로 대응시키지 않습니다.
+
+```text
+remote_agent_context를 C:/CubaseMixAI/session 폴더로 호출해.
+분석 JSON, 전체 reference/mix 차이, stem 비교와 현재 Cubase 트랙/Volume 값을 읽어.
+그 근거에 따라 최대 1 dB씩만 바꾸는 remote_batch_volume 제안을 만들고,
+플러그인 변경이 필요하면 먼저 remote_find_insert/remote_map_insert 결과를 설명해.
+적용하지 말고 제안 이유와 불확실성, 실제 Cubase 현재값을 함께 보여줘.
+```
+
+에이전트 반복은 **컨텍스트 읽기 → 분석 근거 검토 → API 변경안 생성 → 승인 UI 적용 → API readback → Cubase 재렌더 → WAV 재분석** 순서입니다. 수동 모드에서는 UI의 **승인 및 적용** 한 번으로 처리할 수 있습니다. **Auto 켜기**를 직접 선택하면 켜져 있는 동안 새 MCP 제안을 승인·적용합니다. Auto는 별도 사용자 opt-in이며, 테스트 프로젝트에서만 켜고 작업이 끝나면 끄세요. 원본 프로젝트 파일을 직접 수정하거나 저장하지 않습니다.
 
 ## 1. 업데이트와 두 MIDI 포트
 
@@ -105,7 +134,7 @@ Cubase의 detection 이름은 위 기본 loopMIDI 이름이고, JSON은 Python�
 
 ## 4. Codex MCP 등록과 첫 조회
 
-기존 `cubasemixai` MCP 등록을 그대로 사용할 수 있습니다. Python 패키지를 업데이트하고 Codex를 재시작하면 **31개 도구**가 조회되어야 합니다. 기본 등록:
+기존 `cubasemixai` MCP 등록을 그대로 사용할 수 있습니다. Python 패키지를 업데이트하고 Codex를 재시작하면 **40개 도구**가 조회되어야 합니다. 기본 등록:
 
 ```powershell
 codex mcp add cubasemixai --env 'CUBASEMIXAI_STATE_DIR=C:\CubaseMixAI\.cubasemixai' --env 'OMP_NUM_THREADS=2' -- 'C:\CubaseMixAI\.venv\Scripts\cubasemixai-mcp.exe'
@@ -201,6 +230,16 @@ remote_propose_plugin을 호출해 pending 제안만 만들어줘.
 5. batch 적용 후 Cubase에서 새 마스터 WAV를 렌더하고 `remote_propose_master_peak`에 Stereo Out Volume 정보와 WAV를 지정합니다. 기본 `peak_metric=sample_peak_dbfs`, `target_peak_db=-6`은 렌더된 출력의 sample peak를 -6 dBFS로 맞추려는 목표입니다. 한 번에 최대 3 dB까지 master fader 변경안을 만듭니다.
 6. master 제안을 승인·적용한 뒤 다시 렌더하고 측정합니다. compressor/limiter, automation, routing이 있으면 fader 이동과 출력 피크가 정확히 1:1로 움직이지 않을 수 있어 반복 측정과 청취가 필요합니다.
 
+### 레퍼런스 없이 선택한 모든 트랙을 같은 양만큼 낮추기
+
+`remote_propose_lower_all_faders`는 1–32개 명시된 채널 Volume을 같은 양만큼 낮춥니다. 예를 들어 `cut_db=2`이면 각 페이더의 현재 dB 값에서 2 dB를 뺀 값을 제안합니다. `remote_tracks`의 target과 `remote_inspect`의 실제 Volume tag를 전달해야 합니다. 현재 이 도구는 DAW의 모든 채널을 자동 선별하지 않으므로 대상 목록을 직접 확인하고 Stereo Out/master와 Control Room은 제외하세요. 승인 UI에서 한 번 승인하면 순차 적용 후 각 페이더를 확인합니다. 이는 출력 피크를 -6 dBFS로 맞추는 기능이 아니며, 필요하면 적용 후 새 WAV 렌더를 `remote_propose_master_peak`으로 따로 측정합니다.
+
+```text
+remote_tracks와 remote_inspect으로 오디오 트랙의 실제 Volume 파라미터를 확인해.
+Stereo Out과 Control Room을 제외한 대상 목록을 remote_propose_lower_all_faders에 전달해
+cut_db=2로 제안만 만들어. 변경 목록을 보여주고 아직 승인하거나 적용하지 마.
+```
+
 Codex 요청 예:
 
 ```text
@@ -230,7 +269,7 @@ object_id, Volume parameter_tag를 사용하고, master_wav는 위 파일로 해
 ## 8. 실제 검증 목록과 한계
 
 - [ ] Cubase 15의 정확한 build·edition과 API capabilities 기록
-- [ ] driver 로드, 양방향 두 포트 handshake, 31개 MCP 도구 조회
+- [ ] driver 로드, 양방향 두 포트 handshake, 40개 MCP 도구 조회
 - [ ] Kick/Vocal을 따로 만들고 Vocal이 선택된 상태에서 Kick Volume만 바뀌는지 확인
 - [ ] 킥 트랙 재정렬 후 동일 identity를 따라가는지 확인
 - [ ] 대상 삭제·plugin 교체·프로젝트 전환·값 수동 변경 시 기존 제안을 거부하는지 확인

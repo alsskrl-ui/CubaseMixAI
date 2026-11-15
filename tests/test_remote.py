@@ -277,6 +277,56 @@ def test_reference_volume_batch_partial_failure_is_uncertain_and_single_use(tmp_
     assert host.writes==2
 
 
+def test_uniform_fader_cut_batch_is_same_db_and_approval_gated(tmp_path,monkeypatch):
+    import cubasemixai.remote.workflow as remote
+    import cubasemixai.remote.tools as tools
+    from cubasemixai.remote.tools import remote_propose_lower_all_faders
+    host=BatchHost();monkeypatch.setattr(remote,'RemoteClient',lambda:host);monkeypatch.setattr(tools,'RemoteClient',lambda:host)
+    w=Workflow(str(tmp_path/'state'))
+    tracks=[{'target':host.target(i),'object_id':i,'parameter_tag':1} for i in (10,11)]
+    result=remote_propose_lower_all_faders(tracks,cut_db=2,state_dir=str(tmp_path/'state'))
+    proposal=result['proposal']
+    assert [p['after_plain'] for p in proposal['payload']['plans']]==[-14,-16]
+    assert host.writes==0
+    w.decide(proposal['id'],True)
+    applied=w.apply(proposal['id'],dry_run=False)
+    assert applied['proposal']['status']=='verified' and host.writes==2
+    assert host.values[10]==-14 and host.values[11]==-16
+    with pytest.raises(ValueError,match='at most 12'):
+        remote_propose_lower_all_faders(tracks,cut_db=13,state_dir=str(tmp_path/'state'))
+    master=host.target(20);master['title']='Stereo Out'
+    with pytest.raises(ValueError,match='Master/output'):
+        remote_propose_lower_all_faders([{'target':master,'object_id':20,'parameter_tag':1}],cut_db=2,state_dir=str(tmp_path/'state'))
+
+
+def test_remote_batch_volume_reads_live_faders_and_excludes_output_channel(tmp_path,monkeypatch):
+    import cubasemixai.remote.workflow as remote
+    import cubasemixai.remote.tools as tools
+    import cubasemixai.remote.operations as operations
+    from cubasemixai.remote.operations import remote_batch_volume
+    host=BatchHost()
+    output=host.target(20);output['unique_name']='OutputChannel'
+    host.request_orig=host.request
+    def request(op,args):
+        if op=='tracks':
+            return {'tracks':[host.target(10),host.target(11),output]}
+        if op=='channel_fader':
+            target=args['target'];value=host.values[target['object_id']]
+            return {'parameter':{'tag':1,'unit':'dB','plain':value}}
+        return host.request_orig(op,args)
+    host.request=request
+    monkeypatch.setattr(remote,'RemoteClient',lambda:host)
+    monkeypatch.setattr(tools,'RemoteClient',lambda:host)
+    monkeypatch.setattr(operations,'RemoteClient',lambda:host)
+    monkeypatch.setenv('CUBASEMIXAI_STATE_DIR',str(tmp_path/'state'))
+
+    result=remote_batch_volume(-1)
+    plans=result['payload']['plans']
+    assert [p['object']['object_id'] for p in plans]==[10,11]
+    assert [p['after_plain'] for p in plans]==[-13,-15]
+    assert host.writes==0
+
+
 def test_master_peak_proposal_uses_exported_wav_and_fader_unit(tmp_path,monkeypatch):
     import numpy as np
     import soundfile as sf

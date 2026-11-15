@@ -131,6 +131,56 @@ def remote_propose_reference_volumes(track_pairs: list[dict], max_track_step_db:
             'requires':'One local approval. Faders are written sequentially and individually read back; a connection failure can leave a partial batch marked uncertain. Re-render stems before a follow-up match.'}
 
 
+def remote_propose_lower_all_faders(tracks: list[dict], cut_db: float = 1.0,
+                                    reason: str = 'Lower selected Cubase track faders by a uniform amount',
+                                    state_dir: str | None = None) -> dict:
+    """Propose the same downward dB move for each explicitly selected track fader.
+
+    Each item contains the complete target from remote_tracks plus object_id and
+    parameter_tag from remote_inspect. The master/output channel must be omitted;
+    master peak targeting is a separate post-render workflow.
+    """
+    import math
+    from ..workflow import Workflow
+    from .workflow import RemoteWorkflow
+
+    if not isinstance(tracks,list) or not 1<=len(tracks)<=32:
+        raise ValueError('Provide 1–32 explicitly selected Cubase track faders')
+    if type(cut_db) not in (int,float) or not math.isfinite(cut_db) or not 0<cut_db<=12:
+        raise ValueError('Uniform cut must be greater than 0 and at most 12 dB')
+    seen=set();plans=[];summaries=[]
+    with RemoteClient() as host:
+        for item in tracks:
+            for key in ('target','object_id','parameter_tag'):
+                if key not in item: raise ValueError('Each track needs target, object_id and parameter_tag')
+            target=item['target']
+            if not isinstance(target,dict) or not target.get('session') or not target.get('unique_id'):
+                raise ValueError('Use the complete session-scoped target returned by remote_tracks')
+            channel_title=str(target.get('title','')).strip().lower()
+            if 'stereo out' in channel_title or 'control room' in channel_title or channel_title in {'master','main out'}:
+                raise ValueError('Master/output and Control Room channels are excluded; adjust the explicit track list')
+            if item['object_id']!=target.get('object_id'):
+                raise ValueError('Track Volume must be read from the mixer-channel object itself')
+            ident=(target['unique_id'],item['object_id'],item['parameter_tag'])
+            if ident in seen: raise ValueError('Duplicate Cubase track/volume parameter in batch')
+            seen.add(ident)
+            found=_read_db_fader(host,target,item['object_id'],item['parameter_tag'])
+            current=float(found['plain']);after=current-float(cut_db)
+            args={'target':target,'object_id':item['object_id'],'parameter_tag':item['parameter_tag'],
+                  'after':after,'value_kind':'plain','unit':'dB','max_delta':float(cut_db)}
+            plan=host.request('preview',args)['plan']
+            if abs(plan['before']['plain']-current)>.001:
+                raise ValueError('Cubase fader changed while preparing this batch; read all values again')
+            plans.append(plan)
+            summaries.append({'track':found['title'],'current_fader_db':current,
+                              'proposed_fader_db':after,'cut_db':float(cut_db)})
+    proposal=RemoteWorkflow(Workflow(state_dir)).propose_batch(
+        plans,reason,{'method':'Apply the same fixed dB reduction to each explicitly selected track fader.',
+                      'tracks':summaries,'master_output_included':False})
+    return {'proposal':proposal,'tracks':summaries,
+            'requires':'One local approval. The listed track faders are written sequentially and individually read back. Master/output fader is excluded; render again to measure the resulting peak.'}
+
+
 def remote_propose_master_peak(target: dict, object_id: int, parameter_tag: int,
                                master_wav: str, target_peak_db: float = -6.0,
                                peak_metric: str = 'sample_peak_dbfs', max_step_db: float = 3.0,

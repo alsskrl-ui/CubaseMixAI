@@ -1,10 +1,10 @@
 # 0.4.0 검증 기록
 
-2026-11-09, Linux / Python 3.12.14. 정확한 의존성 버전은 [environment-tested.json](environment-tested.json)에 기록했습니다. 일반 설치는 pyproject.toml을 사용합니다.
+2026-11-09 baseline, with follow-up verification on 2026-11-15 in Linux / Python 3.12.14. 정확한 의존성 버전은 [environment-tested.json](environment-tested.json)에 기록했습니다. 일반 설치는 pyproject.toml을 사용합니다.
 
 ## 자동 테스트
 
-기존 0.3 기준 전체 suite는 **33 passed**였습니다. MIDI 표현 신규 테스트 4개와 reference-volume/master-peak batch 테스트 3개를 별도로 통과했습니다. 전체 suite는 로컬 환경의 MCP stdio 통합 테스트가 응답 대기에서 멈춰 이번 작업에서 끝까지 완료하지 못했습니다. MCP 서버 도구 목록은 직접 조회해 31개 등록을 확인했습니다.
+기존 0.3 기준 전체 suite는 **33 passed**였습니다. GitHub의 최신 MCP 확장(eaf3b714)과 로컬 일괄감쇠/에이전트 컨텍스트 도구를 합쳐 MCP 서버의 **40개 도구** 등록을 확인했습니다. 새 세션 컨텍스트·동일량 batch·기존 batch/마스터 흐름 집중 테스트 7개가 통과했습니다. 전체 suite와 Windows Cubase 실기기 통합은 이 환경에서 끝까지 수행하지 않았습니다.
 
 - 합성 사인파 RMS, 6.02dB gain/LUFS 관계, 무음·역상·구간 유효성
 - 레퍼런스 기반 수치 후보의 범위·변화량, pending 상태, 근거 WAV 변경 감지
@@ -15,13 +15,21 @@
 - MIDI 원본 보존, 새 파일만 생성, bounded pitch bend·CC1·channel aftertouch, 지정 곡선 생성과 잘못된 곡선 거부 (신규 집중 테스트 4건 통과)
 - 짝지어진 stem의 LUFS 기반 여러 트랙 fader step, 한 번 승인, fader별 fresh readback·묶음 복원, 부분 전송의 uncertain 단일 사용
 - 새 master WAV sample peak를 -6 dBFS 목표와 비교해 제한된 master fader 변경안을 만들고 승인·재조회
+- 선택한 트랙 Volume을 동일 dB만큼 낮추는 batch 제안, master/output 제외, 단일 승인·fader별 readback (집중 테스트 통과)
+- 표준 세션 폴더에서 WAV·analysis JSON·동일 basename stem pair를 읽고 live Cubase channel/fader API 상태를 묶는 agent context (집중 테스트 통과)
+- 전체 또는 지정 `unique_id`의 relative dB batch fader 제안, output 제외 및 live fader read
+- 최신 MIDI Remote driver의 channel fader read, API audio command, host inspect/identity/path tests
 - 로컬 UI token/Host/Origin/직접 확인, 만료·거절·중복·동시 적용 차단
 - 부분 전송 예외, 재시도 차단, 적용 전 스냅샷과 복원 제안
 - 시뮬레이션 매핑의 승인 후 live 전송 차단
-- MCP 도구 31개 등록 확인 (서버 목록 직접 조회); 승인/raw MIDI 송신 도구 부재
+- MCP 도구 40개 등록 확인; MCP에는 직접 approval/raw MIDI 도구를 노출하지 않음
 - 분석 → 제안 → 승인 → mock MIDI → 새 렌더 가져오기 → 평가 → A/B 출력 → 복원 제안 통합
 
 MIDI 전송은 mock sender로 검증했으며 실제 Cubase 동작은 검증하지 않았습니다. 샌드박스에서 로컬 비동기 HTTP가 대기하여 루프백 통신 가능한 실행 환경에서 테스트를 수행했습니다.
+
+이번 실행에서 브라우저 UI 시나리오는 loopback `127.0.0.1:8765` bind 제한으로 시작하지 못했습니다. Auto/one-click 브라우저 흐름은 별도 사용 PC에서 확인해야 합니다.
+
+현재 실행환경의 MCP stdio subprocess harness도 종료 대기에서 20초 후 timeout 되었습니다. MCP server 내부 등록 목록은 직접 introspection으로 40개와 새 도구 이름을 확인했으며, stdio 종료/handshake는 이 환경에서 검증 완료로 보고하지 않습니다.
 
 ## Cubase 15 DirectAccess 검증 추가
 

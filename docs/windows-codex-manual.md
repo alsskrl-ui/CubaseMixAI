@@ -2,6 +2,8 @@
 
 Cubase 15의 MIDI Remote DirectAccess 또는 Cubase 10.5의 기존 CC 경로로, 레퍼런스를 분석하고 직접 승인한 변경만 적용하는 로컬 프로그램입니다. 이 문서는 **Cubase가 설치된 Windows PC + PowerShell + Codex CLI**를 기준으로 작성했습니다.
 
+Cubase 15 프로젝트/transport/MIDI import·export 제어를 추가하려면 [Cubase Complete MCP 병행 설치 가이드](cubase-integration.md)를 따르세요. 기존 Python 서버와 별도 MCP/loopMIDI 포트를 사용합니다.
+
 기본 순서는 다음과 같습니다.
 
 **Cubase에서 WAV 내보내기 → 프로그램/Codex로 분석 → 변경안 생성 → 브라우저에서 직접 승인 → MIDI 적용 → Cubase에서 새 WAV 내보내기 → 전후 비교·청취**
@@ -58,7 +60,7 @@ CLI 예: `cubasemixai midi-expression source.mid expressive.mid --pitch-wander-c
 | loopMIDI | 같은 Windows PC | Python에서 Cubase로 MIDI CC를 전달하는 가상 포트 |
 | CubaseMixAI CLI | PowerShell | WAV 분석, 변경안, 백업, 재렌더 비교 등의 명령 실행 |
 | 로컬 승인 UI | 같은 PC의 웹 브라우저 | 결과 확인, 변경안 직접 승인·거절, 실제 전송, 복원 제안 |
-| CubaseMixAI MCP 서버 | Codex가 실행하는 로컬 프로세스 | Codex가 프로그램의 31개 도구를 호출하도록 연결 |
+| CubaseMixAI MCP 서버 | Codex가 실행하는 로컬 프로세스 | Codex가 프로그램의 40개 도구를 호출하도록 연결 |
 | Codex CLI | 같은 Windows PC | 자연어 요청을 도구 호출로 바꾸고 결과·근거·다음 작업 설명 |
 | CLAP | 선택 설치, 같은 PC | 음원 임베딩과 음색·펀치·공간 프롬프트 친화도 비교 |
 
@@ -1016,12 +1018,17 @@ AI 의존성도 갱신할 때는 마지막 명령에 `-e '.[ai]'`를 사용합�
 
 WAV 분석과 CLAP 추론은 로컬에서 수행하며 이 MCP 구현이 WAV 파일 자체를 외부로 업로드하지는 않습니다. Codex로 도구를 호출하면 반환되는 분석 수치·경로·요약은 Codex 대화의 문맥으로 전달될 수 있습니다. 로컬 토큰은 같은 사용자 권한의 악의적 프로그램에 대한 보안 경계가 아닙니다.
 
-### MCP 도구 31개
+### MCP 도구 40개
 
 | 작업 | 도구 |
 |---|---|
 | Cubase 15 조회 | `remote_status`, `remote_tracks`, `remote_inspect`, `remote_plugins` |
+| 세션 분석+현재 Cubase 상태 | `remote_agent_context`, `remote_channel_fader` |
 | Cubase 15 제안 | `remote_propose`, `remote_propose_plugin` |
+| 선택 트랙의 같은 양 페이더 감쇠 | `remote_propose_lower_all_faders` |
+| 선택/전체 채널의 상대 dB batch | `remote_batch_volume` |
+| 플러그인 검색·파라미터 맵 | `remote_find_insert`, `remote_map_insert` |
+| Cubase 오디오 명령·WAV 입출력·재렌더 | `remote_audio_command`, `remote_import_wav`, `remote_rerender_mix` |
 | 레퍼런스 스템 기반 묶음 페이더 제안 | `remote_propose_reference_volumes` |
 | 마스터 WAV 피크 기반 페이더 제안 | `remote_propose_master_peak` |
 | MIDI 표현 파일 생성 | `add_midi_expression` |

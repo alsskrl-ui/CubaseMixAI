@@ -1,0 +1,10 @@
+{
+  "reference_wav": "audio/reference.wav",
+  "mix_wav": "audio/current-mix.wav",
+  "analysis_dir": "analysis",
+  "mix_stems_dir": "stems/mix",
+  "reference_stems_dir": "stems/reference",
+  "track_map": {
+    "kick": "COPY_THIS_FROM_remote_tracks_unique_id"
+  }
+}
