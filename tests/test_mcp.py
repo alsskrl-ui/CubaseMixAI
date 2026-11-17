@@ -18,7 +18,8 @@ def test_stdio_tools():
                         'remote_audio_command','remote_import_wav','remote_rerender_mix'} <= names
                 assert {'roughmix_analyze','roughmix_review','roughmix_propose','roughmix_evaluate'} <= names
                 assert {'remote_insert_parameters', 'remote_configure_insert'} <= names
-                assert len(names)==46
+                assert {'midi_track_info','draw_midi_track_expression','remote_import_midi','remote_midi_file_command'} <= names
+                assert len(names)==50
                 assert 'add_midi_expression' in names
                 assert {'remote_propose_reference_volumes','remote_propose_master_peak'} <= names
                 assert {'remote_status','remote_tracks','remote_inspect','remote_plugins','remote_propose','remote_propose_plugin'} <= names

@@ -1,4 +1,4 @@
-"""Send an existing WAV to Cubase 15's native Windows audio import dialog."""
+"""Submit validated WAV/MIDI files through Cubase 15 native Windows dialogs."""
 import os
 import time
 from pathlib import Path
@@ -8,13 +8,40 @@ import soundfile
 
 def remote_import_wav(path: str) -> dict:
     """Import a WAV at Cubase's current cursor. Any conversion/options dialog remains in Cubase."""
-    from .operations import remote_audio_command
-
-    if os.name != "nt":
-        raise ValueError("File selection currently requires Windows")
     wav = Path(path).resolve(strict=True)
     if wav.suffix.lower() != ".wav" or soundfile.info(wav).format not in {"WAV", "WAVEX", "RF64"}:
         raise ValueError("Choose a WAV audio file")
+    return _submit_cubase_file(wav, "import_audio")
+
+
+def remote_import_midi(path: str) -> dict:
+    """Submit a MIDI file to Cubase's native import dialog on Windows.
+
+    This may create new tracks/parts. It does NOT overwrite a chosen existing part.
+    Confirm destination, position, routing and tempo import options in Cubase.
+    """
+    from ..midi_track import _read
+    midi, _, _ = _read(path)
+    result = _submit_cubase_file(midi, "import_midi")
+    result.update(cubase_part_modified=None,
+                  next="Confirm MIDI import options and placement in Cubase; route to the intended instrument and avoid duplicate original notes.")
+    return result
+
+
+def remote_midi_file_command(action: str) -> dict:
+    """Open Cubase's native MIDI export/import dialog; completion and selection remain in Cubase."""
+    from .client import RemoteClient
+    if action not in {"import_midi", "export_midi"}:
+        raise ValueError("Choose import_midi or export_midi")
+    with RemoteClient() as host:
+        return {"command": host.request("audio_command", {"action": action}),
+                "status": "dialog_requested", "file_completed": False}
+
+
+def _submit_cubase_file(wav, action):
+    from .client import RemoteClient
+    if os.name != "nt":
+        raise ValueError("File selection currently requires Windows")
     import win32api
     import win32con
     import win32gui
@@ -38,7 +65,8 @@ def remote_import_wav(path: str) -> dict:
     existing = cubase_dialogs()
     if existing:
         raise ValueError("Close the existing Cubase dialog before importing")
-    remote_audio_command("import_audio")
+    with RemoteClient() as host:
+        host.request("audio_command", {"action": action})
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         for hwnd in cubase_dialogs():
@@ -60,13 +88,13 @@ def remote_import_wav(path: str) -> dict:
                 continue
             win32gui.SendMessage(edits[0], win32con.WM_SETTEXT, 0, str(wav))
             if win32gui.GetWindowText(edits[0]) != str(wav):
-                raise ValueError("Cubase did not accept the WAV path")
+                raise ValueError("Cubase did not accept the file path")
             win32gui.PostMessage(hwnd, win32con.WM_COMMAND, win32con.IDOK, 0)
             return {"status": "file_submitted", "path": str(wav),
                     "next": "Confirm import options if shown; check the event at the project cursor."}
         time.sleep(.15)
     return {"status": "awaiting_file_selection", "path": str(wav),
-            "next": "Select this WAV in the Cubase import dialog."}
+            "next": "Select this file in the Cubase import dialog."}
 
 def remote_rerender_mix(before: str, reference: str, output: str) -> dict:
     """Start a tracked re-render. Confirm locators and the returned output path in Cubase's export dialog.

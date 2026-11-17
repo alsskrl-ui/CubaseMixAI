@@ -78,7 +78,6 @@ assert(!f.request('preview',{target:t,object_id:10,parameter_tag:1,after:-13,val
 assert(f.request('preview',{target:t,object_id:10,parameter_tag:1,after:.75,value_kind:'normalized',max_delta:.1}).ok);
 console.log('Driver contract passed: real API-shaped mock, identity, scope, current value, epoch, replay, physical conversion, plugin catalog/assignment and API 1.2 fallback.');
 
-}
 
 // Large sessions must enumerate beyond the historical 256-child cap.
 f=fixture();
@@ -94,3 +93,11 @@ for(let i=0;i<520;i++){
  assert(f.request('apply',{plan:p}).ok);
 }
 assert.equal(f.writes,520);
+
+f=fixture();
+assert(f.request('audio_command',{action:'import_midi'}).ok);
+assert.deepEqual(f.commands.pop(),['File','Import MIDI File']);
+assert(f.request('audio_command',{action:'export_midi'}).ok);
+assert.deepEqual(f.commands.pop(),['File','Export MIDI File']);
+
+}

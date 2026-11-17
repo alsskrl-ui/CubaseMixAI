@@ -200,6 +200,8 @@ if (driver.mSurface && page.makeCommandBinding) {
     bindAudioCommand('render_selection','Render in Place','Render');
     bindAudioCommand('export_mix','File','Export Audio Mixdown');
     bindAudioCommand('import_audio','File','Import Audio File');
+    bindAudioCommand('import_midi','File','Import MIDI File');
+    bindAudioCommand('export_midi','File','Export MIDI File');
 }
 function dispatch(op,args) {
     if (op==='hello') {
