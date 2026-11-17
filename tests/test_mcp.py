@@ -16,7 +16,8 @@ def test_stdio_tools():
                 assert not {'approve','decide','send_cc'} & names
                 assert {'remote_channel_fader','remote_batch_volume','remote_find_insert','remote_map_insert',
                         'remote_audio_command','remote_import_wav','remote_rerender_mix'} <= names
-                assert len(names)==40
+                assert {'roughmix_analyze','roughmix_review','roughmix_propose','roughmix_evaluate'} <= names
+                assert len(names)==44
                 assert 'add_midi_expression' in names
                 assert {'remote_propose_reference_volumes','remote_propose_master_peak'} <= names
                 assert {'remote_status','remote_tracks','remote_inspect','remote_plugins','remote_propose','remote_propose_plugin'} <= names

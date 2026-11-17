@@ -194,7 +194,7 @@ host plain 단위가 선형 amplitude이거나 `dB`가 아니라면 dB처럼 더
 
 `acknowledged_by_cubase: true` / `verification: fresh_direct_access_read`는 이 경로의 파라미터/객체 후조건을 확인했다는 뜻입니다. 오디오 품질 개선까지 확인한 것은 아닙니다. automation이 나중에 값을 덮어쓸 수도 있으므로 재생 중 값과 청취를 확인하세요.
 
-다른 트랙을 선택하더라도 mixer target identity로 주소를 지정합니다. 반면 프로젝트 전환, 대상 삭제·교체·이름 변경, plugin 교체, 승인 전후의 값 변경은 거부 사유가 됩니다. 세션이 바뀌면 `remote_tracks`부터 다시 조회합니다. 전송 후 응답 유실/결과 불일치는 `uncertain`이며 자동 재전송하지 않습니다. 한 driver 세션의 mutation request 한도는 512개이고 대규모 객체/파라미터 탐색에는 한계가 있어 초과 시 명시적으로 거부합니다. 세션을 다시 활성화한 후에는 target과 제안을 새로 조회해야 합니다.
+다른 트랙을 선택하더라도 mixer target identity로 주소를 지정합니다. 반면 프로젝트 전환, 대상 삭제·교체·이름 변경, plugin 교체, 승인 전후의 값 변경은 거부 사유가 됩니다. 세션이 바뀌면 `remote_tracks`부터 다시 조회합니다. 전송 후 응답 유실/결과 불일치는 `uncertain`이며 자동 재전송하지 않습니다. 한 driver 세션의 mutation request 한도는 16384개이고 대규모 객체/파라미터 탐색에는 한계가 있어 초과 시 명시적으로 거부합니다. 세션을 다시 활성화한 후에는 target과 제안을 새로 조회해야 합니다.
 
 파라미터 복원은 기존 `restore`로 **실제 현재 값을 새로 읽은 역방향 pending 제안**을 만듭니다. 다시 승인해야 하며 이전 세션/대상 변경 시에는 새 조회가 필요합니다.
 
@@ -269,7 +269,7 @@ object_id, Volume parameter_tag를 사용하고, master_wav는 위 파일로 해
 ## 8. 실제 검증 목록과 한계
 
 - [ ] Cubase 15의 정확한 build·edition과 API capabilities 기록
-- [ ] driver 로드, 양방향 두 포트 handshake, 40개 MCP 도구 조회
+- [ ] driver 로드, 양방향 두 포트 handshake, 44개 MCP 도구 조회
 - [ ] Kick/Vocal을 따로 만들고 Vocal이 선택된 상태에서 Kick Volume만 바뀌는지 확인
 - [ ] 킥 트랙 재정렬 후 동일 identity를 따라가는지 확인
 - [ ] 대상 삭제·plugin 교체·프로젝트 전환·값 수동 변경 시 기존 제안을 거부하는지 확인

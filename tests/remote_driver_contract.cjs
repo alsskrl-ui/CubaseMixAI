@@ -79,3 +79,18 @@ assert(f.request('preview',{target:t,object_id:10,parameter_tag:1,after:.75,valu
 console.log('Driver contract passed: real API-shaped mock, identity, scope, current value, epoch, replay, physical conversion, plugin catalog/assignment and API 1.2 fallback.');
 
 }
+
+// Large sessions must enumerate beyond the historical 256-child cap.
+f=fixture();
+for(let i=1000;i<1300;i++){
+ f.nodes[i]={uid:'large-'+i,name:'Audio',title:'Track '+i,children:[]};
+ f.nodes[0].children.push(i);
+}
+assert.equal(f.request('tracks').result.tracks.length,302);
+// Several mix passes must not exhaust the former 512-mutation cap.
+f=fixture();t=f.request('tracks').result.tracks[0];
+for(let i=0;i<520;i++){
+ const p=f.request('preview',{target:t,object_id:10,parameter_tag:1,after:i%2?.8:.79,value_kind:'normalized',unit:'',max_delta:.1}).result.plan;
+ assert(f.request('apply',{plan:p}).ok);
+}
+assert.equal(f.writes,520);

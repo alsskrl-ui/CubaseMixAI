@@ -9,6 +9,20 @@ class RemoteWorkflow:
         self.w=workflow
         self.client_factory=client_factory or RemoteClient
 
+    @staticmethod
+    def check_master_guards(host, guards):
+        for guard in guards:
+            actual = host.request('channel_fader', {'target': guard['target']})['parameter']
+            expected = guard['parameter']
+            value = actual.get('normalized')
+            if (type(value) not in (int, float) or not math.isfinite(value)
+                or actual.get('tag') != expected['tag']
+                or abs(value - expected['normalized']) > .00001):
+                raise ValueError('Master fader changed; stop roughmix and refresh the session')
+
+    def _guard(self, host, proposal):
+        self.check_master_guards(host, (proposal['payload'].get('evidence') or {}).get('master_guards', []))
+
     def _store(self,plan,reason,evidence=None):
         if not isinstance(reason,str) or not reason.strip():
             raise ValueError('A reviewable reason is required')
@@ -18,10 +32,10 @@ class RemoteWorkflow:
         return self.w.store(payload)
 
     def _store_batch(self,plans,reason,evidence=None):
-        if not 1<=len(plans)<=32:raise ValueError('Batch must contain 1–32 fader changes')
+        if not 1<=len(plans)<=32:raise ValueError('Batch must contain 1–32 parameter changes')
         if not isinstance(reason,str) or not reason.strip():raise ValueError('A reviewable reason is required')
         payload={'backend':'midi_remote','kind':'batch_parameter','plans':plans,'reason':reason,'evidence':evidence,
-                 'risk':'Faders are written sequentially after one local approval. A host/connection failure can leave a partial batch marked uncertain; review actual Cubase values before any recovery.'}
+                 'risk':'Parameters are written sequentially after one local approval. A host/connection failure can leave a partial batch marked uncertain; review actual Cubase values before any recovery.'}
         self.w._check_sources(payload)
         return self.w.store(payload)
 
@@ -41,7 +55,7 @@ class RemoteWorkflow:
 
     def propose_batch(self,plans,reason,evidence=None):
         clean=list(plans)
-        if not 1<=len(clean)<=32:raise ValueError('Batch must contain 1–32 fader changes')
+        if not 1<=len(clean)<=32:raise ValueError('Batch must contain 1–32 parameter changes')
         if any(plan.get('kind')!='parameter' for plan in clean):raise ValueError('Only parameter plans can be batched')
         keys=[(p['target'].get('unique_id'),p['object']['object_id'],p['before']['tag']) for p in clean]
         if len(set(keys))!=len(keys):raise ValueError('Batch contains duplicate parameters')
@@ -65,6 +79,7 @@ class RemoteWorkflow:
                 return self.w.get(ident)
             self._valid(p,'pending')
             with self.client_factory() as host:
+                self._guard(host,p)
                 for plan in p['payload']['plans']:
                     host.request('check',{'plan':plan})
             with self.w.connect() as con:
@@ -141,11 +156,13 @@ class RemoteWorkflow:
         p=self.w.get(ident);plans=p['payload']['plans']
         if dry_run:
             with self.client_factory() as host:
+                self._guard(host,p)
                 checked=[host.request('check',{'plan':plan})['plan'] for plan in plans]
             return {'dry_run':True,'sent':False,'backend':'midi_remote','plans':checked}
         self._valid(p,'approved')
         receipts=[]
         with self.client_factory() as host:
+            self._guard(host,p)
             for plan in plans:host.request('check',{'plan':plan})
             with self.w.connect() as con:
                 con.execute('BEGIN IMMEDIATE')
@@ -157,6 +174,7 @@ class RemoteWorkflow:
                 import json
                 (self.w.root/(ident+'.before.json')).write_text(json.dumps(p,ensure_ascii=False,indent=2),encoding='utf-8')
                 for plan in plans:
+                    self._guard(host,p)
                     host.request('check',{'plan':plan})
                     receipt=host.request('apply',{'plan':plan})
                     observed=None;deadline=time.monotonic()+2
@@ -165,6 +183,7 @@ class RemoteWorkflow:
                         if abs(observed['parameter']['normalized']-plan['after_normalized'])<=.00001:break
                         time.sleep(.05)
                     else:raise ValueError('Batch postcondition not observed; partial result is uncertain')
+                    self._guard(host,p)
                     receipts.append({'plan':plan,'dispatch':receipt,'observed':observed})
                     p['payload']['batch_receipts']=receipts
                     with self.w.connect() as con:

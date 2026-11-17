@@ -38,7 +38,7 @@ function sameObject(a,b) {
 }
 function children(id) {
     var out=[], count=da.getNumberOfChildObjects(mapping,id), i;
-    if (count>256) fail('OBJECT_CHILD_LIMIT');
+    if (count>1024) fail('OBJECT_CHILD_LIMIT');
     for (i=0;i<count;i++) out.push(identity(da.getChildObjectID(mapping,id,i)));
     return out;
 }
@@ -283,7 +283,7 @@ input.mOnSysex=function(activeDevice,message) {
         if(packet.op!=='hello' && packet.session!==session)fail('STALE_SESSION');
         if(packet.op==='apply' || packet.op==='apply_plugin') {
             if(mutations[packet.id])fail('MUTATION_REQUEST_REPLAY');
-            if(mutationCount>=512)fail('SESSION_WRITE_LIMIT_REACTIVATE_DRIVER');
+            if(mutationCount>=16384)fail('SESSION_WRITE_LIMIT_REACTIVATE_DRIVER');
             mutations[packet.id]=true;mutationCount++;
         }
         var result=dispatch(packet.op,packet.args||{});result.session=session;

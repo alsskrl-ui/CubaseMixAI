@@ -17,8 +17,10 @@ from .remote.operations import remote_batch_volume, remote_find_insert, remote_m
 from .remote.agent import remote_agent_context
 from .midi_expression import add_midi_expression
 
+from .roughmix import roughmix_analyze, roughmix_review, roughmix_propose, roughmix_evaluate
+
 server = FastMCP('CubaseMixAI')
-for function in (analyze,compare,analyze_stems,recommend,integrate,propose_reference,evaluate_render,
+for function in (roughmix_analyze, roughmix_review, roughmix_propose, roughmix_evaluate, analyze,compare,analyze_stems,recommend,integrate,propose_reference,evaluate_render,
                  compare_sections,export_ab,export_report,clap_compare,backup_project,verify_backup,
                  restore_project,calibration_report,master_chain,create_render_job,finish_render_job,
                  remote_rerender_mix,remote_import_wav,remote_batch_volume,remote_find_insert,remote_map_insert,

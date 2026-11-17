@@ -10,7 +10,7 @@ from .client import RemoteClient
 
 MAX_REPORT_FILES = 16
 MAX_REPORT_BYTES = 2 * 1024 * 1024
-MAX_TRACKS = 128
+MAX_TRACKS = 512
 
 
 def _digest(path: Path) -> str:

@@ -74,3 +74,10 @@ UI는 사용자의 Windows Cubase PC에서 열어야 실제 파일·MIDI 장치�
 GitHub Actions는 Linux/Windows Python 3.11 기본 테스트와 Linux 브라우저 검증을 실행합니다. Run workflow 수동 실행 시 공식 모델을 설치하는 AI smoke job도 실행합니다. 초기 업로드 커밋 `a162373`의 두 플랫폼 CI는 성공했습니다. 확장 커밋의 CI 상태는 [Actions](https://github.com/alsskrl-ui/CubaseMixAI/actions)에서 확인할 수 있습니다.
 
 사용자 Windows의 설치·loopMIDI·Generic Remote·Quick Controls, 실제 `.cpr`/외부 미디어 백업 복원, 독립 true-peak 비교, 실제 음원·최종 마스터링 청취는 아직 수행하지 않았습니다. 완료 전까지 [설정·검증 목록](verification-checklist.md)을 미완료로 유지합니다.
+
+## 2026-11-17 수백 트랙 러프믹스
+
+- 러프믹스·기존 Remote·세션 분석 테스트: 23개 통과. UI 테스트 1개는 이 환경에서 대기하여 중단/제외했습니다.
+- 합성 WAV로 개별 볼륨 후보, 300트랙 페이지 처리, 5종 효과 매핑, 원본 변경 차단, 마스터 변경 시 승인/적용 차단, 새 렌더 피크 측정을 확인했습니다.
+- Node API mock에서 302채널 조회와 520회 변경을 포함한 드라이버 계약 검사가 통과했습니다.
+- MCP 도구는 44개입니다. 실제 Cubase 300트랙, 플러그인별 동작, Auto UI, 무인 WAV export는 검증하지 않았습니다.
