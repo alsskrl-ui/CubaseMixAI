@@ -49,3 +49,5 @@ remote_agent_context로 C:/CubaseMixAI/session을 읽고 분석 결과와 현재
 ## 수백 트랙 러프믹스
 
 레퍼런스와 최대 512트랙 WAV를 측정해 서로 다른 볼륨 후보를 만들고, Codex가 매핑된 패닝·EQ·컴프·리버브·딜레이를 개별 제안할 수 있습니다. 마스터 페이더를 고정하고 32개씩 승인·적용한 뒤 새 렌더로 −6 dBFS peak 목표를 확인합니다. 실제 렌더는 Cubase에서 완료해야 합니다. [준비·사용 예시](docs/roughmix.md).
+
+플러그인 작업은 **검색·삽입 제안 → 승인/삽입 확인 → 실제 파라미터 조회 → 설정 변경 제안·적용** 순서입니다. `remote_insert_parameters`와 `remote_configure_insert`가 삽입 결과에 연결되어 잘못된 인스턴스 조정을 막습니다. [사용 순서](docs/roughmix.md#플러그인-불러오기--파라미터-조정).

@@ -44,3 +44,21 @@ roughmix_propose로 32개씩 제안하고 기존 승인/적용 절차를 따라.
 ## 기존 설치 업데이트
 
 `git pull --ff-only` 후 가상환경에서 `python -m pip install -e .`를 실행하고 Codex를 재시작합니다. 이번 변경은 드라이버도 포함하므로 Cubase를 종료하고 설치된 `CubaseMixAI_DirectBridge.js`를 새 소스로 교체한 뒤 다시 실행해야 합니다. 드라이버 설치 위치는 [Cubase 15 가이드](cubase15.md)를 참고하세요. 재시작 후 트랙 ID와 매핑을 새로 조회합니다.
+
+## 플러그인 불러오기 → 파라미터 조정
+
+1. `remote_find_insert(target, name, vendor, slot_number)`로 설치된 플러그인을 검색하고 빈 슬롯 삽입을 제안합니다. 이름이 모호하면 목록에서 정확한 제품을 선택합니다.
+2. UI 승인 후 `apply(insert_proposal_id, dry_run=false)`를 실행합니다. 상태가 `verified`여야 다음 단계로 진행합니다.
+3. `remote_insert_parameters(insert_proposal_id)`로 방금 삽입한 인스턴스의 실제 parameter tag·이름·단위·현재 값을 조회합니다.
+4. `remote_configure_insert(insert_proposal_id, changes, reason)`로 여러 값의 변경안을 만듭니다. 승인 후 반환된 **새 변경안 ID**를 `apply`합니다.
+5. 재렌더·비교합니다. Auto 사용 시에도 삽입 결과가 `verified`인지 확인한 후 설정 변경안을 생성합니다.
+
+```text
+Vocal에 설치된 컴프레서를 찾아 빈 Insert 슬롯에 불러와.
+삽입 적용이 verified가 되면 remote_insert_parameters로 파라미터를 읽어.
+레퍼런스와 내 보컬 측정에 근거해 threshold/ratio/attack/release 변경안을
+remote_configure_insert로 만들어. 삽입 전에는 parameter tag를 추측하지 마.
+```
+
+`changes` 예시: `[{"name":"Threshold","after":-13,"value_kind":"plain","unit":"dB","max_delta":1}]`.
+실제 이름과 단위로 바꾸고 현재 값과의 차이가 제한 안인지 확인합니다. 동명 파라미터는 `name` 대신 `parameter_tag`를 사용합니다. 물리값 단계는 최대 3 단위, 정규화값은 0..1 범위에서 최대 0.25 변화입니다. 파라미터 조정은 최대 32개씩 처리합니다. 설치되지 않은 플러그인의 다운로드/설치는 수행하지 않습니다.
