@@ -102,7 +102,7 @@ source.mid를 보존하고 새 파일을 만들어. 애프터터치를 0→80→
 UI와 MCP는 같은 상태 폴더(`C:\CubaseMixAI\.cubasemixai`)를 사용해야 합니다. UI는 프로젝트 루트에서 `cubasemixai ui`로 실행하고, 안내된 로컬 주소와 review token으로 엽니다.
 
 - 기본 동작: Codex가 제안하고 사용자가 로컬 UI에서 확인·승인합니다.
-- **Auto 모드:** 켜져 있는 동안 모든 MCP의 새 제안을 자동 적용합니다. 필요한 동안만 켜세요.
+- **Auto 모드:** 켜져 있는 동안 기존 및 새 미만료 변경안을 자동 승인·적용하고 목록을 자동 갱신합니다. 필요한 동안만 켜세요.
 - WAV 분석, 변경 제안, Cubase 적용은 각각 별도 단계입니다. 제안 생성 요청에서 적용까지 허용하지 않았다면 실제 값은 바뀌지 않습니다.
 - `cubasemixai-mcp.exe`가 없으면 가상환경에서 `python -m pip install -e .`를 실행합니다.
 - 도구 목록이 갱신되지 않으면 Codex를 재시작하고 `codex mcp get cubasemixai`의 명령 경로를 확인합니다.

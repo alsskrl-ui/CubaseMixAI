@@ -3,7 +3,7 @@
 <h1>CubaseMixAI</h1><p>분석 → 제안 → 직접 검토·승인 → 적용 → 재렌더 비교</p>
 <section><label for="token">로컬 실행 터미널에 표시된 승인 토큰</label><input id="token" type="password" autocomplete="off"><p class="muted">토큰은 브라우저 메모리에만 유지됩니다. 프로젝트를 별도 폴더로 백업하고 현재 Cubase 값과 매핑을 직접 확인하세요.</p></section>
 <section><h2>분석 및 작업</h2><label for="operation">수행할 작업</label><select id="operation"></select><form id="form"><div id="fields"></div><button id="run">실행</button></form><p id="message" role="status"></p><details open><summary>작업 결과</summary><pre id="result">로컬 파일 경로를 입력하세요. WAV나 프로젝트는 서버로 업로드되지 않습니다.</pre></details><button id="download">결과 JSON 저장</button></section>
-<section><div class="row"><h2>변경안 검토와 적용</h2><button id="auto" aria-pressed="false">Auto 켜기</button><button id="refresh">목록 새로고침</button></div><p>Auto를 켜면 이 탭이 열려 있는 동안 모든 MCP에서 새로 생성된 변경안을 순서대로 적용합니다. 이 기능을 켠 동안에는 요청과 제안 내용을 확인하고, 다른 작업을 시작하기 전 끄세요. 기존 변경안은 승인 및 적용을 누르세요.</p><main id="list"></main></section>
+<section><div class="row"><h2>변경안 검토와 적용</h2><button id="auto" aria-pressed="false">Auto 켜기</button><button id="refresh">목록 새로고침</button></div><p>Auto를 켜면 이 탭이 열려 있는 동안 기존 및 새 변경안을 자동으로 받아 순서대로 승인·적용하고 목록을 갱신합니다. 이미 승인한 변경안도 적용하며, 만료·거절·적용 완료·결과 불확실 항목은 제외합니다. 오류가 나면 Auto가 중지됩니다. 진행 중인 전송은 끄기 버튼으로 취소되지 않습니다.</p><main id="list"></main></section>
 <script>
 const token=document.querySelector('#token'),message=document.querySelector('#message'),result=document.querySelector('#result');
 const definitions={
@@ -59,7 +59,7 @@ autoButton.onclick=async()=>{
     if(autoButton.getAttribute('aria-pressed')==='true'){stopAuto();return}
     autoButton.disabled=true;
     try{
-        const {since}=await api('/auto/start',{});
+        await api('/auto/start',{});
         const run=++generation;
         autoButton.setAttribute('aria-pressed','true');
         autoButton.textContent='Auto 끄기';
@@ -67,16 +67,19 @@ autoButton.onclick=async()=>{
         async function poll(){
             if(run!==generation)return;
             try{
-                const pending=await api('/auto/pending?since='+encodeURIComponent(since));
-                for(const id of pending){
+                const pending=await api('/auto/queue');
+                for(const item of pending){
+                    const id=item.id;
                     if(run!==generation)return;
                     if(attempted.has(id))continue;
                     attempted.add(id);
-                    show(await approveAndApply(id));
+                    if(item.status==='pending')await api('/decision/'+id,{approve:true,confirmed:true});
+                    if(run!==generation)return;
+                    show(await api('/apply/'+id,{dry_run:false,confirmed:true}));
                     message.textContent='자동 적용 완료';
                     await refresh();
                 }
-                if(run===generation)setTimeout(poll,1000);
+                if(run===generation){await refresh();setTimeout(poll,1000);}
             }catch(e){
                 if(run===generation){stopAuto();message.textContent='자동 적용 중지 · '+e.message;await refresh()}
             }

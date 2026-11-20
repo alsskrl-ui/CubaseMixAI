@@ -38,7 +38,7 @@ def create_app(workflow: Workflow, token: str | None = None) -> FastAPI:
     def start_auto(x_review_token: str | None = Header(default=None)):
         import time
         authorize(x_review_token)
-        return {"since": time.time()}
+        return {"since": 0, "includes_existing": True}
 
     @app.get("/auto/pending")
     def pending_auto(since: float, x_review_token: str | None = Header(default=None)):
@@ -48,6 +48,15 @@ def create_app(workflow: Workflow, token: str | None = None) -> FastAPI:
             return [row[0] for row in con.execute(
                 "SELECT id FROM proposals WHERE created>? AND status='pending' ORDER BY created,rowid",
                 (max(since, time.time()-900),))]
+
+    @app.get("/auto/queue")
+    def auto_queue(x_review_token: str | None = Header(default=None)):
+        import time
+        authorize(x_review_token)
+        with workflow.connect() as con:
+            return [{"id": row[0], "status": row[1]} for row in con.execute(
+                "SELECT id,status FROM proposals WHERE created>? AND status IN ('pending','approved') ORDER BY created,rowid",
+                (time.time()-900,))]
 
     class Decision(BaseModel):
         approve: bool
