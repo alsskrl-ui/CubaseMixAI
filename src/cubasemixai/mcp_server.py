@@ -16,13 +16,14 @@ from .remote.audio_import import remote_import_wav, remote_rerender_mix, remote_
 from .remote.operations import remote_batch_volume, remote_find_insert, remote_map_insert, remote_audio_command
 from .remote.insert_chain import remote_insert_parameters, remote_configure_insert
 from .remote.agent import remote_agent_context
+from .midi_automation import create_midi_automation
 from .midi_expression import add_midi_expression
 from .midi_track import midi_track_info, draw_midi_track_expression
 
 from .roughmix import roughmix_analyze, roughmix_review, roughmix_propose, roughmix_evaluate
 
 server = FastMCP('CubaseMixAI')
-for function in (midi_track_info, draw_midi_track_expression, remote_import_midi, remote_midi_file_command, remote_insert_parameters, remote_configure_insert, roughmix_analyze, roughmix_review, roughmix_propose, roughmix_evaluate, analyze,compare,analyze_stems,recommend,integrate,propose_reference,evaluate_render,
+for function in (create_midi_automation, midi_track_info, draw_midi_track_expression, remote_import_midi, remote_midi_file_command, remote_insert_parameters, remote_configure_insert, roughmix_analyze, roughmix_review, roughmix_propose, roughmix_evaluate, analyze,compare,analyze_stems,recommend,integrate,propose_reference,evaluate_render,
                  compare_sections,export_ab,export_report,clap_compare,backup_project,verify_backup,
                  restore_project,calibration_report,master_chain,create_render_job,finish_render_job,
                  remote_rerender_mix,remote_import_wav,remote_batch_volume,remote_find_insert,remote_map_insert,

@@ -46,3 +46,22 @@ Lead 트랙의 0~8박 구간에 피치벤드를 0 → +2반음 → 0으로,
 - 악기의 pitch-bend 범위는 직접 맞춰야 합니다. 같은 라우팅 채널의 동시 발음에 함께 작용하며, CC1/애프터터치 반응은 악기 지원에 따릅니다.
 
 이번 업데이트는 Python 패키지 갱신, MIDI Remote JS 드라이버 교체, Cubase/Codex 재시작이 필요합니다. 실제 Cubase MIDI 가져오기와 악기별 청취 검증은 사용자 PC에서 진행합니다.
+
+## 마디 구간 CC 파일 생성
+
+`create_midi_automation`은 원본 MIDI 없이 CC 전용 새 파일을 만듭니다. 마디는 1부터 시작하며 끝 마디는 제외합니다. 예: 5~9는 5·6·7·8마디, 종료 값은 9마디 시작점에 기록합니다.
+
+```json
+{"output_midi":"C:/session/modulation.mid","cc_number":1,"channel":1,
+ "start_bar":5,"end_bar":9,"curve":"sine","start_value":0,"end_value":100,
+ "cycles":2,"tempo_bpm":120,"numerator":4,"denominator":4,"steps_per_beat":32}
+```
+
+- `linear`: 시작 값 → 종료 값 직선.
+- `exponential`: `t**exponent` 곡선. 기본 exponent=2로 천천히 시작합니다. 0을 포함하거나 내려가는 곡선도 지원합니다.
+- `sine`: 시작 값 → 종료 값 → 시작 값으로 cycles회 왕복합니다. 0.5회면 종료 값에서 끝납니다.
+- CC 번호와 값은 0~127, 채널은 1~16입니다. 샘플 밀도는 4분음표당 이벤트 수입니다.
+- 프로젝트의 고정 박자·템포를 지정하세요. 변박·템포맵 자동 조회는 하지 않습니다.
+- 파일은 1마디 원점부터의 절대 위치를 포함하므로 Cubase 프로젝트 원점에 가져와야 합니다. 종료 값은 다음 CC가 올 때까지 유지됩니다.
+- 기존 파트를 직접 수정하거나 새 노트를 만들지 않습니다. `remote_import_midi`로 제출 후 위치·악기 라우팅·템포 가져오기 옵션을 확인합니다.
+- Python 패키지 갱신 후 Codex를 재시작하면 됩니다. 이번 도구 추가에는 드라이버 교체가 필요 없습니다.
